@@ -1,11 +1,14 @@
-# Push a tag like v0.1.0, or run it by hand (Actions → Release → Run workflow: the tag is made
-# from the version in desktop/package.json) → tests, then the Windows installer and the Mac builds,
-# published together as one GitHub Release (the PC app checks it for updates).
+# A release: bump the version in desktop/ and web/package.json, add docs/releases/v<version>.md
+# and push to main (or push a tag like v0.1.0, or run it by hand). → tests, then the Windows
+# installer and the Mac builds, published together as one GitHub Release with the tag v<version>
+# (the PC app checks it for updates).
 name: Release
 
 on:
   push:
     tags: ["v*"]
+    branches: [main]
+    paths: ["docs/releases/**"]
   workflow_dispatch:
 
 permissions:

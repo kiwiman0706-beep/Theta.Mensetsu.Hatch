@@ -1,6 +1,6 @@
 # The browser version (PWA) on GitHub Pages: https://kiwiman0706-beep.github.io/Theta.Mensetsu.Hatch/
 # Built from web/ (with the shared UI in ui/ and the backend in desktop/lib) on every push to main.
-# Needs Settings → Pages → Source: "GitHub Actions" (once).
+# Needs Settings → Pages → Source: "GitHub Actions" (once); then Actions → this workflow → Re-run.
 name: Web (GitHub Pages)
 
 on:
