@@ -190,6 +190,8 @@ function modal(html, viewer = false) {
   $("modal").innerHTML = `<div class="sheetback ${viewer ? "viewer" : ""}" onclick="if(event.target===this)closeModal()"><div class="sheet" role="dialog"><button class="close" onclick="closeModal()" aria-label="閉じる">${icon("close")}</button>${html}</div></div>`;
 }
 function closeModal() {
+  if (sk && sk.dirty && !confirm("手書きメモを保存せずに閉じますか？")) return;
+  sk = null;
   if (recorder) recorder.stop(); // closing the sheet saves the recording
   camStop();
   modalOpen = false;
@@ -295,7 +297,7 @@ function filtered(ignoreFilter = false) {
         (ignoreFilter || f[2](p)) &&
         (!catFilter || (catFilter === "-" ? !p.category : p.category === catFilter)) &&
         (!q ||
-          [...FIELDS.map((k) => p[k]), p.suggestion?.name, ...(p.notes || []).map((n) => n.text), ...(p.recordings || []).map((r) => r.summary), ...(p.documents || []).map((d) => d.kind + " " + d.title)]
+          [...FIELDS.map((k) => p[k]), p.suggestion?.name, ...(p.notes || []).map((n) => n.text), ...(p.recordings || []).map((r) => r.summary), ...(p.sketches || []).map((k) => k.title + " " + (k.text || "")), ...(p.documents || []).map((d) => d.kind + " " + d.title)]
             .join(" ")
             .toLocaleLowerCase()
             .includes(q)),
@@ -708,6 +710,187 @@ function docEditSheet(i) {
     `<h2>${icon("doc")} 書類</h2><label class="label">種類</label><input list="dockinds" id="dk" value="${esc(d.kind || "")}"><datalist id="dockinds">${DOC_KINDS.map((k) => `<option value="${esc(k)}"></option>`).join("")}</datalist><label class="label">書類名</label><input id="dt" value="${esc(d.title || "")}"><label class="label">日付</label><input type="date" id="dd" value="${esc(d.date || "")}"><button class="primary full gap" onclick="call('docEdit',{id:selected,did:'${esc(d.id)}',kind:$('dk').value,title:$('dt').value,date:$('dd').value});closeModal()">保存</button>`,
   );
 }
+// ---- Handwritten memos (stylus) --------------------------------------------------------------------
+// One page (A4 proportions, 1000 × 1414 units). Pen pressure sets the line width; once a pen is
+// seen, fingers and palms only scroll (no stray marks); the pen's eraser end / button erases.
+// Saved as a PNG (what Obsidian shows) plus the strokes as JSON (to edit again later).
+const SK_W = 1000, SK_H = 1414;
+let sk = null;
+function sketchBox(p) {
+  const list = [...(p.sketches || [])].sort((a, b) => b.time - a.time);
+  return `<section class="panel"><h3>手書きメモ <small>${list.length}件</small></h3>${list
+    .map(
+      (k) =>
+        `<div class="note"><div class="notehead"><div><small>${esc(date(k.time))}</small><div><b>${esc(k.title || "手書きメモ")}</b></div></div><div><button onclick="sketchOpen('${esc(k.id)}')" aria-label="手書きメモを開く">${icon("edit")}</button><button onclick="removeItem('sketches',${p.sketches.findIndex((x) => x.id === k.id)})" aria-label="手書きメモを削除">${icon("trash")}</button></div></div><img class="sketchthumb" loading="lazy" src="${img(k.file)}" alt="手書きメモ" onclick="sketchOpen('${esc(k.id)}')">${k.text ? `<details><summary class="caption">読み取った文字</summary><p class="notebody">${esc(k.text)}</p></details>` : can("gemini") ? `<button class="link" onclick="call('sketchText',{id:selected,sid:'${esc(k.id)}'})">${icon("spark")}手書きの文字を読み取る</button>` : ""}</div>`,
+    )
+    .join("")}<button class="outline full gap" onclick="sketchOpen('')">${icon("edit")}手書きで書く（ペン・指）</button></section>`;
+}
+async function sketchOpen(sid) {
+  const p = getPerson();
+  const k = (p.sketches || []).find((x) => x.id === sid);
+  sk = { id: p.id, sid, title: k ? k.title || "" : "", strokes: [], redo: [], color: "#1f3346", width: 3, eraser: false, bg: "lines", penSeen: false, dirty: false, cur: null };
+  if (k && k.strokes) {
+    try {
+      const d = await (await fetch(img(k.strokes))).json();
+      sk.strokes = d.strokes || [];
+      sk.bg = d.bg || "lines";
+    } catch {
+      toast("前の線を読み込めませんでした（画像は残っています）");
+    }
+  }
+  modal(
+    `<div class="sktools"><input id="sk-title" value="${esc(sk.title)}" placeholder="題（例：一次面接）" oninput="sk.title=this.value"><div class="skrow">${[
+      ["#1f3346", "黒"],
+      ["#1f5c99", "青"],
+      ["#b3261e", "赤"],
+      ["#1d7048", "緑"],
+    ]
+      .map(([c, l]) => `<button class="skcolor" style="--c:${c}" data-c="${c}" onclick="skColor('${c}')" aria-label="${l}"></button>`)
+      .join("")}<select aria-label="太さ" onchange="sk.width=+this.value"><option value="2">細</option><option value="3" selected>中</option><option value="6">太</option><option value="14">マーカー</option></select><button id="sk-eraser" onclick="skEraser()" aria-label="消しゴム">消しゴム</button><button onclick="skUndo()" aria-label="元に戻す">${icon("back")}</button><button onclick="skRedo()" aria-label="やり直し">${icon("next")}</button><select aria-label="用紙" onchange="sk.bg=this.value;skBg()"><option value="lines">罫線</option><option value="grid">方眼</option><option value="plain">無地</option></select><button onclick="if(confirm('全部消しますか？')){sk.redo=sk.strokes;sk.strokes=[];sk.dirty=true;skDraw()}">全消去</button></div></div><div class="skpage" id="sk-page"><canvas id="sk-paper"></canvas><canvas id="sk-canvas"></canvas></div><div class="row gap"><button class="primary" onclick="skSave(false)">${icon("check")}保存</button>${can("gemini") ? `<button class="secondary" onclick="skSave(true)">${icon("spark")}保存して文字を読み取る</button>` : ""}</div><p class="caption">ペンで書くと、指や手のひらは画面のスクロールだけになります。ペンの消しゴム（ボタン）でも消せます。</p>`,
+  );
+  $("modal").querySelector(".sheet").classList.add("sketchsheet");
+  sk.canvas = $("sk-canvas");
+  skColor(sk.color);
+  skSize();
+  skBg();
+  skBind();
+  skDraw();
+}
+function skSize() {
+  const w = $("sk-page").clientWidth;
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  for (const c of [sk.canvas, $("sk-paper")]) {
+    c.style.width = w + "px";
+    c.style.height = Math.round((w * SK_H) / SK_W) + "px";
+    c.width = Math.round(w * dpr);
+    c.height = Math.round(((w * SK_H) / SK_W) * dpr);
+  }
+  sk.scale = sk.canvas.width / SK_W;
+}
+function skBg() {
+  const c = $("sk-paper");
+  if (c.width) skPaper(c.getContext("2d"), c.width, c.height, c.width / SK_W, sk.bg);
+}
+// The paper: white, with ruled lines or a grid every 40 units.
+function skPaper(g, W, H, scale, bg) {
+  g.fillStyle = "#fff";
+  g.fillRect(0, 0, W, H);
+  g.strokeStyle = "#dfe6ee";
+  g.lineWidth = Math.max(1, 1.2 * scale);
+  const step = 40 * scale;
+  if (bg === "plain") return;
+  for (let y = step * 2; y < H; y += step) (g.beginPath(), g.moveTo(0, y), g.lineTo(W, y), g.stroke());
+  if (bg === "grid") for (let x = step; x < W; x += step) (g.beginPath(), g.moveTo(x, 0), g.lineTo(x, H), g.stroke());
+}
+function skColor(c) {
+  sk.color = c;
+  sk.eraser = false;
+  for (const b of document.querySelectorAll(".skcolor")) b.classList.toggle("on", b.dataset.c === c);
+  $("sk-eraser")?.classList.remove("on");
+}
+function skEraser() {
+  sk.eraser = !sk.eraser;
+  $("sk-eraser").classList.toggle("on", sk.eraser);
+  for (const b of document.querySelectorAll(".skcolor")) b.classList.toggle("on", !sk.eraser && b.dataset.c === sk.color);
+}
+function skPoint(e) {
+  const r = sk.canvas.getBoundingClientRect();
+  const pr = e.pointerType === "pen" ? e.pressure || 0.5 : e.pointerType === "touch" ? (e.pressure > 0 && e.pressure < 1 ? e.pressure : 0.5) : 0.5;
+  return [Math.round(((e.clientX - r.left) / r.width) * SK_W * 10) / 10, Math.round(((e.clientY - r.top) / r.height) * SK_H * 10) / 10, Math.round(pr * 100) / 100];
+}
+function skBind() {
+  const c = sk.canvas;
+  c.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "pen" && !sk.penSeen) {
+      sk.penSeen = true;
+      c.style.touchAction = "pan-y pinch-zoom"; // fingers scroll from now on
+    }
+    if (sk.penSeen && e.pointerType === "touch") return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    try {
+      c.setPointerCapture(e.pointerId);
+    } catch {}
+    const erase = sk.eraser || e.button === 5 || (e.buttons & 32) === 32;
+    sk.cur = { c: sk.color, w: erase ? Math.max(18, sk.width * 4) : sk.width, e: erase ? 1 : 0, p: [skPoint(e)], id: e.pointerId };
+    skSegment(sk.cur, 0);
+  });
+  c.addEventListener("pointermove", (e) => {
+    if (!sk.cur || e.pointerId !== sk.cur.id) return;
+    e.preventDefault();
+    const evs = (e.getCoalescedEvents && e.getCoalescedEvents()) || [];
+    for (const ev of evs.length ? evs : [e]) {
+      sk.cur.p.push(skPoint(ev));
+      skSegment(sk.cur, sk.cur.p.length - 1);
+    }
+  });
+  const end = (e) => {
+    if (!sk.cur || e.pointerId !== sk.cur.id) return;
+    const s = sk.cur;
+    sk.cur = null;
+    delete s.id;
+    sk.strokes.push(s);
+    sk.redo = [];
+    sk.dirty = true;
+  };
+  c.addEventListener("pointerup", end);
+  c.addEventListener("pointercancel", end);
+}
+// Draws one segment (point i-1 → i) of a stroke, width following the pen's pressure.
+function skSegment(s, i, g = sk.canvas.getContext("2d"), scale = sk.scale) {
+  const p = s.p[i], q = s.p[Math.max(0, i - 1)];
+  g.globalCompositeOperation = s.e ? "destination-out" : "source-over";
+  g.strokeStyle = s.c;
+  g.fillStyle = s.c;
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  g.lineWidth = Math.max(0.6, s.w * (s.e ? 1 : 0.35 + 0.9 * ((p[2] + q[2]) / 2))) * scale;
+  if (s.w >= 10 && !s.e) g.globalAlpha = 0.35;
+  g.beginPath();
+  g.moveTo(q[0] * scale, q[1] * scale);
+  g.lineTo(p[0] * scale + (i === 0 ? 0.01 : 0), p[1] * scale);
+  g.stroke();
+  g.globalAlpha = 1;
+  g.globalCompositeOperation = "source-over";
+}
+function skDraw(g = sk.canvas.getContext("2d"), scale = sk.scale, w = sk.canvas.width, h = sk.canvas.height) {
+  g.clearRect(0, 0, w, h);
+  for (const s of sk.strokes) for (let i = 0; i < s.p.length; i++) skSegment(s, i, g, scale);
+}
+function skUndo() {
+  if (!sk.strokes.length) return;
+  sk.redo.push(sk.strokes.pop());
+  sk.dirty = true;
+  skDraw();
+}
+function skRedo() {
+  if (!sk.redo.length) return;
+  sk.strokes.push(sk.redo.pop());
+  sk.dirty = true;
+  skDraw();
+}
+// The saved picture: white paper (with its lines) under the ink, 1240 px wide.
+async function skSave(read) {
+  if (!sk.strokes.length) return toast("まだ何も書かれていません");
+  const W = 1240, H = Math.round((W * SK_H) / SK_W), scale = W / SK_W;
+  const ink = document.createElement("canvas");
+  ink.width = W;
+  ink.height = H;
+  skDraw(ink.getContext("2d"), scale, W, H);
+  const out = document.createElement("canvas");
+  out.width = W;
+  out.height = H;
+  const g = out.getContext("2d");
+  skPaper(g, W, H, scale, sk.bg);
+  g.drawImage(ink, 0, 0);
+  const png = await new Promise((ok) => out.toBlob(ok, "image/png"));
+  const json = new Blob([JSON.stringify({ v: 1, w: SK_W, h: SK_H, bg: sk.bg, strokes: sk.strokes })], { type: "application/json" });
+  const q = { as: "sketch", id: sk.id, sid: sk.sid, title: sk.title, read };
+  sk.dirty = false;
+  closeModal();
+  window.ThetaUpload([{ name: "memo.png", blob: png }, { name: "memo.json", blob: json }], q);
+}
+
 // ---- Separate windows (PC) ---------------------------------------------------------------------
 // "#p=<id>" opens that applicant alone: several can be side by side, each its own window.
 const solo = (/^#p=([A-Za-z0-9_-]+)$/.exec(location.hash) || [])[1] || "";
@@ -731,7 +914,7 @@ function detail() {
     !FIELDS.some((k) => !["name", "kana", "stage", "rating", "interview", "category", "position", "employment", "birthDate", "gender"].includes(k) && String(p[k] || "").trim())
       ? `<p class="caption">まだ詳しい情報がありません。読み取るか、右上の編集から入力してください。</p>`
       : ""
-  }${staffBox(p)}</div><div>${recordBox(p)}<section class="panel"><h3>面接メモ <small>${p.notes.length}件</small></h3><textarea id="note" placeholder="面接での受け答え、印象、確認事項、連絡の記録など" oninput="noteDraft=this.value">${esc(noteDraft)}</textarea><div class="row gap"><button class="secondary" onclick="addNote()">${icon("plus")}${editNoteId ? "変更を保存" : "メモを追加"}</button>${editNoteId ? `<button class="noflex" onclick="noteDraft='';editNoteId='';render()">キャンセル</button>` : ""}</div>${timeline(p)}</section><section class="panel"><h3>応募書類 <small>${p.pages.length}ページ${docs.length ? ` ・ 添付 ${docs.length}件` : ""}</small></h3>${
+  }${staffBox(p)}</div><div>${recordBox(p)}${sketchBox(p)}<section class="panel"><h3>面接メモ <small>${p.notes.length}件</small></h3><textarea id="note" placeholder="面接での受け答え、印象、確認事項、連絡の記録など" oninput="noteDraft=this.value">${esc(noteDraft)}</textarea><div class="row gap"><button class="secondary" onclick="addNote()">${icon("plus")}${editNoteId ? "変更を保存" : "メモを追加"}</button>${editNoteId ? `<button class="noflex" onclick="noteDraft='';editNoteId='';render()">キャンセル</button>` : ""}</div>${timeline(p)}</section><section class="panel"><h3>応募書類 <small>${p.pages.length}ページ${docs.length ? ` ・ 添付 ${docs.length}件` : ""}</small></h3>${
     p.pages.length ? `<div class="pages">${p.pages.map((pg, i) => `<button class="page" onclick="viewImage(${i})"><img class="pageimg" loading="lazy" src="${img(pg.file)}" alt="${i + 1}ページ"><span class="pageLabel">${i + 1}</span></button>`).join("")}</div>` : ""
   }${(p.sources || []).filter((s) => s.file.endsWith(".pdf")).map((s) => `<button class="link" onclick="call('openMedia',{file:'${esc(s.file)}'})">${icon("download")}原本のPDFを開く（${esc(s.name)}）</button>`).join("")}${docs
     .map(
@@ -761,6 +944,7 @@ function detailMenu() {
       only("scan", menuRow("camera", "撮影してページを追加", "", "closeModal();call('scan',{id:selected,mode:'all'})")),
       only("camera", menuRow("camera", "カメラでページを追加", "PCのカメラなどで撮影", "cameraSheet({id:selected})")),
       only("record", menuRow("mic", "面接を録音", "文字起こし・要約もできます", "recordSheet()")),
+      menuRow("edit", "手書きメモ", "ペン・指で書く（筆圧対応）", "closeModal();sketchOpen('')"),
       can("windows") ? menuRow("share", "別ウインドウで開く", "一覧で Ctrl＋クリックでも開けます", "closeModal();openWindow(selected)") : "",
       p.pages.length && can("gemini") ? menuRow("spark", "Geminiで読み取り直す", "結果は保存前に確認できます", "closeModal();reread()") : "",
       menuRow("user", "顔写真", p.portrait ? (p.portraitSource ? "履歴書から切り出し済み" : "手動で登録済み") : "履歴書から切り出す・画像を選ぶ", "assetSheet()"),
@@ -1101,7 +1285,7 @@ function importSheet(action) {
   modal(
     `<h2>${icon("plus")} 履歴書を取り込む</h2><p class="caption">PDF・画像を選ぶと、Geminiが読み取って応募者を登録します（自動読み取りがオンのとき）。${state.platform === "desktop" ? "ファイルをこの画面にドラッグ＆ドロップしても取り込めます（1ファイル = 1人）。" : ""}</p><label class="label">職種（分かっていれば。空なら読み取りで判断）</label><select id="impcat"><option value="">（読み取りで判断）</option>${cats.map((c) => `<option>${esc(c)}</option>`).join("")}</select><label class="label">ページのまとめ方</label><div class="mlist">${groupings
       .map(([v, l, sub]) => menuRow(v === "file" ? "doc" : v === "all" ? "grid" : "list", l + (mode === v && v !== "file" ? "（前回）" : ""), sub, `mode='${v}';importGo('${action === "scan" ? "pick" : action}','${v}')`))
-      .join("")}${action === "scan" ? menuRow("camera", "カメラで撮影", "紙の履歴書を1人分撮影（何枚でも）", "importGo('scan','all')") : ""}${can("camera") ? menuRow("camera", state.platform === "desktop" ? "PCのカメラで撮影" : "カメラで撮影（画面で確認しながら）", "紙の履歴書を1人分、何ページでも", "importCamera()") : ""}${
+      .join("")}${action === "scan" ? menuRow("camera", state.platform === "android" ? "スキャン（書類を自動で切り抜き）" : "カメラで撮影", "紙の履歴書を1人分撮影（何枚でも）", "importGo('scan','all')") : ""}${can("camera") ? menuRow("camera", state.platform === "desktop" ? "PCのカメラで撮影" : "カメラで撮影（画面で確認しながら）", "紙の履歴書を1人分、何ページでも", "importCamera()") : ""}${
       can("folder") ? menuRow("folder", "フォルダから取り込む", "フォルダ内のPDF・画像を一括（1ファイル = 1人。取り込み済みは飛ばします）", "importGo('folder','file')") : ""
     }${can("folder") && state.folder ? menuRow("rotate", "前回のフォルダを再確認", esc(state.folder), "importGo('rescan','file')") : ""}${menuRow("edit", "手入力で追加", "書類なしで登録", "closeModal();manualAdd()")}</div>`,
   );
@@ -1124,6 +1308,7 @@ function manualAdd() {
 // ---- Google, sync and contacts settings -------------------------------------------------------
 const setupDone = new Set();
 function copyText(text) {
+  if (window.ThetaCopy) return ThetaCopy(text).then(() => toast("コピーしました"));
   if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(() => toast("コピーしました"), () => toast("コピーできませんでした"));
   else {
     const t = document.createElement("textarea");
@@ -1145,7 +1330,9 @@ function setupSteps() {
     ["consent", "同意画面（Google Auth Platform）を作る", "「開始」→ アプリ名「Theta Mensetsu Hatch」、サポートメールに自分のアドレス → 対象は「外部」→ 連絡先に自分のアドレス → 同意して「作成」。", "auth/overview", ""],
     ["testuser", "使うGoogleアカウントを追加", "「対象」→「テストユーザー」→「Add users」→ 同期・連絡先に使うGoogleアカウント（連絡先を別のアカウントにするなら両方）を追加して保存。", "auth/audience", ""],
     ["publish", "公開ステータスを「本番環境」にする", "同じ「対象」の画面で「アプリを公開」→「確認」。テストのままだと7日ごとにログインし直しになります（自分たちだけで使うので、Googleの審査は不要です。ログイン時に「確認されていません」と出たら「続行」）。", "auth/audience", ""],
-    web
+    state.platform === "android"
+      ? ["client", "Android用のクライアントを作る", "種類「Android」→ 下の2つを貼り付けて「作成」。クライアントIDをアプリに入れる必要はありません（PC版・ブラウザ版も使うなら、それぞれのクライアントも同じプロジェクトに作ります）。", "auth/clients/create", (state.appPackage ? copy("パッケージ名", state.appPackage) : "") + (state.appSha1 ? copy("SHA-1 証明書フィンガープリント", state.appSha1) : "")]
+      : web
       ? ["client", "ウェブ用のクライアントを作る", "種類「ウェブ アプリケーション」→「承認済みの JavaScript 生成元」に下のアドレスを追加 → 作成。出てきた「クライアントID」をコピーして、この画面の「Googleアカウント」に貼り付けます。", "auth/clients/create", copy("JavaScript 生成元", location.origin)]
       : ["client", "デスクトップ用のクライアントを作る", "種類「デスクトップ アプリ」→ 名前は何でも →「作成」。出てきた「クライアントID」と「クライアント シークレット」を、この画面の「Googleアカウント」に貼り付けます（PCのアプリでは、このシークレットは秘密の鍵ではありません）。", "auth/clients/create", ""],
   ];
@@ -1159,11 +1346,11 @@ function setupGuide(reason = "") {
         ([k, t, how, path, extra], i) =>
           `<li class="${setupDone.has(k) ? "done" : ""}"><label class="stepcheck"><input type="checkbox" ${setupDone.has(k) ? "checked" : ""} onchange="this.checked?setupDone.add('${k}'):setupDone.delete('${k}');setupGuide()"><b>${i + 1}. ${t}</b></label><small>${how}</small>${extra}<button class="outline" onclick="call('openUrl',{url:'https://console.cloud.google.com/${path}'})">${icon("next")}開く</button></li>`,
       )
-      .join("")}</ol><p class="caption">${done}/${steps.length} 完了。作ったばかりの設定は、反映まで数分かかることがあります。</p><button class="primary full gap" onclick="googleSheet()">${icon("user")}クライアントIDを入れる</button>`,
+      .join("")}</ol><p class="caption">${done}/${steps.length} 完了。作ったばかりの設定は、反映まで数分かかることがあります。</p><button class="primary full gap" onclick="googleSheet()">${icon("user")}${state.platform === "android" ? "Googleアカウントへ" : "クライアントIDを入れる"}</button>`,
   );
 }
 function accountBlock(purpose, acc, label) {
-  if (!state.googleClientId) return "";
+  if (!state.googleReady) return "";
   const email = acc?.email || "";
   return `<div class="acct"><span class="mi">${icon(purpose === "contacts" ? "user" : "cloud")}</span><span class="mt"><b>${label}</b><small>${acc?.signedIn ? "ログイン中：" + esc(email) : email ? esc(email) + "（ログインが切れています）" : "未ログイン"}</small></span>${
     acc?.signedIn
@@ -1173,14 +1360,15 @@ function accountBlock(purpose, acc, label) {
 }
 function googleSheet() {
   const desktop = state.platform !== "web";
+  const android = state.platform === "android";
   modal(
-    `<h2>${icon("cloud")} Googleアカウント</h2><p class="caption">Googleドライブ（Theta Vault）の同期と、Google連絡先への登録に使います。ログインのとき、使うアカウントを選べます。<button class="link" onclick="setupGuide()">初めての方：初期設定ガイド</button></p><label class="label">OAuthクライアントID（${desktop ? "種類：デスクトップ アプリ" : "種類：ウェブ アプリケーション"}）</label><input id="gclient" value="${esc(state.googleClientId || "")}" placeholder="123456-xxxx.apps.googleusercontent.com" autocomplete="off" autocapitalize="off">${
+    `<h2>${icon("cloud")} Googleアカウント</h2><p class="caption">Googleドライブ（Theta Vault）の同期と、Google連絡先への登録に使います。ログインのとき、使うアカウントを選べます。<button class="link" onclick="setupGuide()">初めての方：初期設定ガイド</button></p>${android ? `<p class="tip">スマホでは、Google CloudにAndroid用のクライアント（このアプリのパッケージ名とSHA-1）を登録しておくだけで使えます。クライアントIDを入れる必要はありません。</p>` : `<label class="label">OAuthクライアントID（${desktop ? "種類：デスクトップ アプリ" : "種類：ウェブ アプリケーション"}）</label><input id="gclient" value="${esc(state.googleClientId || "")}" placeholder="123456-xxxx.apps.googleusercontent.com" autocomplete="off" autocapitalize="off">${
       desktop ? `<label class="label">クライアント シークレット ${state.googleClientSecretSet ? "・登録済み" : ""}</label><input id="gsecret" type="password" placeholder="${state.googleClientSecretSet ? "変更するときだけ入力" : "GOCSPX-…"}" autocomplete="off">` : ""
-    }<button class="secondary full gap" onclick="call('settings',Object.assign({googleClientId:$('gclient').value},$('gsecret')?{googleClientSecret:$('gsecret').value}:{}))">保存</button>${
-      state.googleClientId
+    }<button class="secondary full gap" onclick="call('settings',Object.assign({googleClientId:$('gclient').value},$('gsecret')?{googleClientSecret:$('gsecret').value}:{}))">保存</button>`}${
+      state.googleReady
         ? `<div class="mlist gap">${accountBlock("sync", state.googleSync, "同期（Googleドライブ）")}${switchRow("users", "連絡先は別のアカウントに登録", "採用用のアカウントなどに分けるとき", state.contactsSeparate, "call('settings',{contactsSeparate:this.checked})")}${state.contactsSeparate ? accountBlock("contacts", state.googleContacts, "Google連絡先の登録先") : ""}</div>`
         : ""
-    }${desktop ? `<p class="caption gap">このPCはログインを覚えているので、裏で自動的に同期します（ログイン情報はWindowsの資格情報保護／Macのキーチェーンで暗号化して保存）。</p>` : `<p class="caption gap">ブラウザ版のログインは約1時間で切れます。切れたらホーム画面の「Googleにログイン」を押してください。</p>`}`,
+    }${android ? `<p class="caption gap">一度許可すると、あとは自動で同期します（アプリを開いたとき・閉じたとき・3分ごと）。</p>` : desktop ? `<p class="caption gap">このPCはログインを覚えているので、裏で自動的に同期します（ログイン情報はWindowsの資格情報保護／Macのキーチェーンで暗号化して保存）。</p>` : `<p class="caption gap">ブラウザ版のログインは約1時間で切れます。切れたらホーム画面の「Googleにログイン」を押してください。</p>`}`,
   );
 }
 function syncSheet() {
@@ -1196,7 +1384,7 @@ function syncSheet() {
         : ""
     }${
       drive
-        ? `<div class="mlist gap">${!state.googleClientId ? menuRow("help", "Google連携の初期設定", "最初に1回だけ", "setupGuide()", "attnrow") : !signed ? menuRow("user", "Googleにログイン", "Theta Vault を置くアカウントを選びます", "closeModal();call('googleSignIn',{purpose:'sync'})", "attnrow") : ""}${
+        ? `<div class="mlist gap">${!state.googleReady ? menuRow("help", "Google連携の初期設定", "最初に1回だけ", "setupGuide()", "attnrow") : !signed ? menuRow("user", "Googleにログイン", "Theta Vault を置くアカウントを選びます", "closeModal();call('googleSignIn',{purpose:'sync'})", "attnrow") : ""}${
             signed
               ? state.syncEnabled
                 ? menuRow("rotate", "今すぐ同期", (state.syncError ? "⚠ " + esc(state.syncError) + " ・ " : "") + (state.lastSync ? "最終同期 " + esc(date(state.lastSync)) : "まだ同期していません") + " ・ " + esc(state.googleSync.email), "closeModal();call('syncNow')", state.syncError ? "attnrow" : "") +
@@ -1252,7 +1440,7 @@ function menuPage() {
     menuRow("spark", "Gemini APIキー・モデル", state.keySet ? "登録済み ・ " + esc(state.model) : "未設定", "go('gemini')", state.keySet ? "" : "attnrow"),
   ])}${only("sync", section("同期・Google", [
     menuRow("cloud", "同期", syncSub, "syncSheet()", state.syncError ? "attnrow" : ""),
-    menuRow("user", "Googleアカウント", state.googleClientId ? (state.googleSync?.email ? esc(state.googleSync.email) + (state.googleSync.signedIn ? "" : "（ログインが切れています）") : "未ログイン") : "未設定（同期・連絡先に必要）", "googleSheet()", state.googleClientId ? "" : "attnrow"),
+    menuRow("user", "Googleアカウント", state.googleReady ? (state.googleSync?.email ? esc(state.googleSync.email) + (state.googleSync.signedIn ? "" : "（ログインが切れています）") : "未ログイン") : "未設定（同期・連絡先に必要）", "googleSheet()", state.googleReady ? "" : "attnrow"),
     menuRow("help", "Google連携の初期設定ガイド", "最初に1回だけ（Google Cloudへの登録）", "setupGuide()"),
   ]))}${section("整理", [
  menuRow("map", "勤務先の住所", state.workplace ? esc(state.workplace) : "未設定（通勤の概算に使います）", "workplaceSheet()"),
@@ -1263,11 +1451,11 @@ function menuPage() {
   ])}${only("export", section("書き出し", [
     menuRow("table", "一覧をCSVで書き出す", "Excelで開けるUTF-8 CSV（すべての応募者）", "call('export',{})"),
     menuRow("table", "今の絞り込みのままCSVで書き出す", esc((FILTERS.find((x) => x[0] === filter) || [])[1] || "") + (catFilter ? "・" + esc(catFilter) : "") + `（${filtered().length}人）`, "call('export',{ids:filtered().map(p=>p.id)})"),
-  ]))}<p class="footnote">Theta Mensetsu Hatch ${state.version ? esc(state.version) + " ・ " : ""}${state.platform === "web" ? "ブラウザ版<br>データはこのブラウザに保存し、Googleドライブの Theta Vault と同期します。" : "PC版<br>データは Theta Vault フォルダ（Markdown＋画像）に保存されます。"}</p>`;
+  ]))}<p class="footnote">Theta Mensetsu Hatch ${state.version ? esc(state.version) + " ・ " : ""}${state.platform === "android" ? "Android版<br>データはこのスマホに保存し、Googleドライブの Theta Vault と同期します。" : state.platform === "web" ? "ブラウザ版<br>データはこのブラウザに保存し、Googleドライブの Theta Vault と同期します。" : "PC版<br>データは Theta Vault フォルダ（Markdown＋画像）に保存されます。"}</p>`;
 }
 function geminiPage() {
   if (!settingsDraft) settingsDraft = { key: "", model: state.model, format: state.format };
-  return `${backbar("Gemini APIキー・モデル")}<section class="panel"><p class="caption">APIキーはこの${state.platform === "web" ? "ブラウザ" : "PC"}の中に保存します（同期・書き出しには含めません）。</p><label class="label">Gemini APIキー ${state.keySet ? "・登録済み" : ""}</label><input type="password" autocomplete="off" value="${esc(settingsDraft.key)}" placeholder="${state.keySet ? "変更する時だけ入力" : "AIza…"}" oninput="settingsDraft.key=this.value"><label class="label">モデル名</label><input id="model" value="${esc(settingsDraft.model)}" oninput="settingsDraft.model=this.value" autocomplete="off"><p class="caption">利用できるモデルはAPIキーごとに異なります。保存後に「モデル一覧」から選べます。</p><details class="gap"><summary class="caption">詳細設定</summary><label class="label">API互換設定（通常は変更不要）</label><select onchange="settingsDraft.format=this.value"><option value="legacy" ${settingsDraft.format === "legacy" ? "selected" : ""}>標準</option><option value="modern" ${settingsDraft.format === "modern" ? "selected" : ""}>新しいモデル向け</option></select></details><div class="row gap"><button class="primary" onclick="saveSettings()">保存</button><button class="outline" onclick="call('models')">モデル一覧</button></div>${state.keySet ? `<button class="danger full gap" onclick="if(confirm('保存しているAPIキーを削除しますか？'))call('settings',{clearKey:true})">APIキーを削除</button>` : ""}</section><div class="tip warning"><b>個人情報の取り扱い</b><br>読み取りのとき、履歴書の画像をGoogleのGemini APIへ送ります。<b>無料枠のAPIキーでは、送った内容がGoogleのサービス改善に使われることがあります。</b>応募者の個人情報を扱うため、請求先アカウント（有料）を設定したプロジェクトのAPIキーを使ってください（履歴書1枚あたりの費用は1円前後の目安です）。施設の個人情報の規程も確認してください。</div>`;
+  return `${backbar("Gemini APIキー・モデル")}<section class="panel"><p class="caption">APIキーはこの${state.platform === "web" ? "ブラウザ" : state.platform === "android" ? "スマホ（暗号化）" : "PC"}の中に保存します（同期・書き出しには含めません）。</p><label class="label">Gemini APIキー ${state.keySet ? "・登録済み" : ""}</label><input type="password" autocomplete="off" value="${esc(settingsDraft.key)}" placeholder="${state.keySet ? "変更する時だけ入力" : "AIza…"}" oninput="settingsDraft.key=this.value"><label class="label">モデル名</label><input id="model" value="${esc(settingsDraft.model)}" oninput="settingsDraft.model=this.value" autocomplete="off"><p class="caption">利用できるモデルはAPIキーごとに異なります。保存後に「モデル一覧」から選べます。</p><details class="gap"><summary class="caption">詳細設定</summary><label class="label">API互換設定（通常は変更不要）</label><select onchange="settingsDraft.format=this.value"><option value="legacy" ${settingsDraft.format === "legacy" ? "selected" : ""}>標準</option><option value="modern" ${settingsDraft.format === "modern" ? "selected" : ""}>新しいモデル向け</option></select></details><div class="row gap"><button class="primary" onclick="saveSettings()">保存</button><button class="outline" onclick="call('models')">モデル一覧</button></div>${state.keySet ? `<button class="danger full gap" onclick="if(confirm('保存しているAPIキーを削除しますか？'))call('settings',{clearKey:true})">APIキーを削除</button>` : ""}</section><div class="tip warning"><b>個人情報の取り扱い</b><br>読み取りのとき、履歴書の画像をGoogleのGemini APIへ送ります。<b>無料枠のAPIキーでは、送った内容がGoogleのサービス改善に使われることがあります。</b>応募者の個人情報を扱うため、請求先アカウント（有料）を設定したプロジェクトのAPIキーを使ってください（履歴書1枚あたりの費用は1円前後の目安です）。施設の個人情報の規程も確認してください。</div>`;
 }
 function saveSettings() {
   call("settings", { ...settingsDraft });
@@ -1281,12 +1469,16 @@ function batchRecognize() {
 }
 
 // ---- Device bridge -----------------------------------------------------------------------------
+// Returns false at the list (the phone app then closes), true when it went back a step.
 window.handleBack = () => {
-  if (!$("busy").hidden) return toast("処理が終わるまでお待ちください");
+  if (!$("busy").hidden) {
+    toast("処理が終わるまでお待ちください");
+    return true;
+  }
   if (modalOpen) {
     if (dupOrigin && !dupOpen && route === "home") dupSheet();
     else closeModal();
-    return;
+    return true;
   }
   if (route === "edit") {
     if (confirm("未保存の編集を破棄しますか？")) {
@@ -1294,11 +1486,18 @@ window.handleBack = () => {
       route = "detail";
       render();
     }
-    return;
+    return true;
   }
-  if (route === "gemini") return go("menu");
-  if (route === "detail" && solo) return window.close();
-  if (route === "detail" || route === "menu") return go("home");
+  if (route === "gemini") return go("menu"), true;
+  if (route === "detail" && solo) return window.close(), true;
+  if (route === "detail" || route === "menu") return go("home"), true;
+  if (route === "home" && (query || catFilter)) {
+    query = "";
+    catFilter = "";
+    render();
+    return true;
+  }
+  return false;
 };
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && (modalOpen || route !== "home")) {
@@ -1381,8 +1580,14 @@ window.onNative = ({ type, data }) => {
     render();
     toast("保存しました");
   } else if (type === "imported") {
-    if (data.ids.length === 1) pendingOpen = data.ids[0];
-    else route = "home";
+    // One applicant: open it (the state with it has usually arrived already).
+    if (data.ids.length === 1) {
+      if (state.people.some((p) => p.id === data.ids[0])) openPerson(data.ids[0]);
+      else pendingOpen = data.ids[0];
+    } else if (route !== "detail" || !data.ids.length) {
+      route = "home";
+      render();
+    }
     const message = `${data.ids.length}人・${data.pages}ページを保存しました。` + (data.skipped ? `\n取り込み済みのため飛ばしたファイル：${data.skipped}` : "");
     if (data.errors.length) report(message + "\n\n取り込めなかったファイル：\n" + data.errors.join("\n"));
     else toast(message);

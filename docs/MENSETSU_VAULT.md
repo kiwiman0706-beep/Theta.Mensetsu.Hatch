@@ -62,6 +62,8 @@ documents:
 - {id: …, date: 2026-10-21, kind: 免許証・資格証の写し, title: 看護師免許, files: [...], originals: [...]}
 recordings:
 - {id: …, file: Mensetsu/_files/….webm, time: …, seconds: 1501, title: 一次面接, summary: …, transcript: …}
+sketches:
+- {id: …, file: Mensetsu/_files/….png, strokes: Mensetsu/_files/….json, time: …, title: 一次面接, text: （Geminiで読み取った文字）}
 evaluations:
 - {id: …, date: 2027-09-30, period: 試用期間, evaluator: 看護部長, score: A, text: …}
 ---
@@ -70,6 +72,10 @@ evaluations:
 
 ## 面接メモ
 - 2026-11-05 14:40 受け答えが丁寧。夜勤の経験あり ^9b1f…
+
+## 手書きメモ
+- 2026-11-05 14:10 一次面接
+  ![[Mensetsu/_files/….png|480]]
 
 ## 採用手続き
 - [x] 入職前の健康診断（健康診断書の提出） 📅 2026-11-20 — 原本受領 ^c1…
@@ -98,7 +104,7 @@ evaluations:
 | --- | --- |
 | frontmatter | 可（アプリが取り込む）。知らない項目は保持 |
 | `## 面接メモ`・`## 採用手続き`・`## 履歴書の全文` | 可（取り込む）。採用手続きは `- [ ]` / `- [x]` のチェックをObsidianで付け外しでき、行を足すと項目が増える |
-| `## 面接の録音`・`## 職員評価`・`## 書類`・画像の行 | frontmatterから生成（表示用。編集は次の保存で上書き） |
+| `## 手書きメモ`・`## 面接の録音`・`## 職員評価`・`## 書類`・画像の行 | frontmatterから生成（表示用。編集は次の保存で上書き） |
 | 自由記述の部分・自分で足した見出し | 自由（アプリは触らない） |
 
 端末固有の情報（読み取り待ち・Geminiの未確認の結果など）はノートに入れず、各PCの設定フォルダに置きます。

@@ -9,7 +9,7 @@ const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".jpg": "image/jpeg", ".png": "image/png", ".pdf": "application/pdf", ".original": "application/octet-stream", ".webm": "audio/webm", ".ogg": "audio/ogg", ".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav" };
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".jpg": "image/jpeg", ".png": "image/png", ".pdf": "application/pdf", ".original": "application/octet-stream", ".webm": "audio/webm", ".ogg": "audio/ogg", ".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".json": "application/json" };
 
 // Runs before app.js: the HTTP flavour of Native.call / onNative, plus drag-and-drop import.
 const BRIDGE = `"use strict";

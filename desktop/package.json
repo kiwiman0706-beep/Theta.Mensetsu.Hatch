@@ -1,7 +1,7 @@
 {
   "name": "theta-mensetsu-hatch",
   "productName": "Theta Mensetsu Hatch",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Theta Mensetsu Hatch for Windows / Mac — applicants from résumés, synced with Google Drive (Theta Vault).",
   "main": "main.js",
   "license": "UNLICENSED",

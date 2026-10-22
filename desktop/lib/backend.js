@@ -115,6 +115,7 @@ class Backend {
       // Google
       googleClientId: s.get("googleClientId", ""),
       googleClientSecretSet: !!s.get("googleClientSecret", ""),
+      googleReady: !!this.gSync,
       googleSync: acc(this.gSync),
       googleContacts: acc(this.gContacts),
       contactsSeparate: s.get("contactsSeparate", false),
@@ -140,7 +141,7 @@ class Backend {
     const pending = people.some((p) => p.contactPending);
     const sync = this.syncOn() && !this.gSync.signedIn();
     const cont = pending && this.gContacts && !this.gContacts.signedIn();
-    return !!(this.settings.get("googleClientId", "") && (sync || cont));
+    return !!(this.gSync && (sync || cont));
   }
   refresh() {
     this.event("state", this.state());
@@ -164,6 +165,8 @@ class Backend {
         return this.scheduleSync(1500);
       case "opened":
         return;
+      case "leave": // the phone app went to the background: send what changed now
+        return this.scheduleSync(0);
       case "focus": // the window came back to the front: catch up with other PCs
         if (Date.now() - this.settings.get("lastSync", 0) > 30000) this.scheduleSync(300);
         return;
@@ -204,7 +207,7 @@ class Backend {
         return st.put(p);
       }
       case "removeItem": {
-        if (!["notes", "pages", "documents", "recordings", "evaluations"].includes(q.key)) throw new Error("不正な項目");
+        if (!["notes", "pages", "documents", "recordings", "evaluations", "sketches", "checklist"].includes(q.key)) throw new Error("不正な項目");
         const p = st.person(id);
         const list = p[q.key] || [];
         if (q.index >= 0 && q.index < list.length) list.splice(q.index, 1);
@@ -308,6 +311,15 @@ class Backend {
         if (r) for (const k of ["title", "transcript", "summary"]) if (k in q) r[k] = String(q[k] || "");
         return st.put(p);
       }
+      case "sketchEdit": {
+        const p = st.person(id);
+        const k = (p.sketches || []).find((x) => x.id === q.sid);
+        if (k) for (const f of ["title", "text"]) if (f in q) k[f] = String(q[f] || "").trim();
+        return st.put(p);
+      }
+      case "sketchText":
+        this.needKey();
+        return this.readSketch(id, q.sid);
       case "recTranscribe":
         this.needKey();
         return this.transcribe(id, q.rid);
@@ -598,6 +610,7 @@ class Backend {
   // Files from the page itself: the camera (pictures of documents) and the microphone (an
   // interview recording). files: [{ name, read() }]
   async receive(files, q = {}) {
+    if (q.as === "sketch") return this.saveSketch(files, q);
     if (q.as !== "recording") return this.importFiles(files, q);
     const p = this.store.person(q.id);
     const bytes = await files[0].read();
@@ -610,6 +623,47 @@ class Backend {
     this.store.put(p);
     this.toast("録音を保存しました");
     if (q.transcribe && this.secrets.get()) await this.transcribe(p.id, rec.id);
+  }
+
+  // A handwritten memo: [picture.png, strokes.json]. Editing one saves new files (files in the
+  // vault never change once written) and replaces the entry.
+  async saveSketch(files, q) {
+    const png = files.find((f) => /\.png$/i.test(f.name)), json = files.find((f) => /\.json$/i.test(f.name));
+    if (!png) throw new Error("手書きメモの画像がありません");
+    const base = crypto.randomUUID();
+    await this.store.writeMedia(base + ".png", await png.read());
+    if (json) await this.store.writeMedia(base + ".json", await json.read());
+    const p = this.store.person(q.id);
+    p.sketches = p.sketches || [];
+    const old = p.sketches.find((x) => x.id === q.sid);
+    const entry = { id: old ? old.id : crypto.randomUUID(), file: base + ".png", time: old ? old.time : Date.now(), title: String(q.title ?? (old ? old.title : "") ?? "").trim() };
+    if (json) entry.strokes = base + ".json";
+    if (old && old.text) entry.text = old.text;
+    if (old) p.sketches[p.sketches.indexOf(old)] = entry;
+    else p.sketches.push(entry);
+    this.store.put(p);
+    this.toast("手書きメモを保存しました");
+    if (q.read && this.secrets.get()) await this.readSketch(p.id, entry.id);
+  }
+
+  async readSketch(id, sid) {
+    const p = this.store.person(id);
+    const k = (p.sketches || []).find((x) => x.id === sid);
+    if (!k) throw new Error("手書きメモが見つかりません");
+    this.event("busy", "手書きの文字を読み取っています");
+    let r;
+    try {
+      const jpeg = await this.svc.imaging.toJpeg(await this.store.readMedia(k.file), 2000);
+      r = await gemini.generate(this.cfg(), "handwriting", [jpeg], this.fetch);
+    } finally {
+      this.event("busy", "");
+    }
+    const x = this.store.person(id);
+    const y = (x.sketches || []).find((z) => z.id === sid);
+    if (!y) return;
+    y.text = String(r.text || "").trim();
+    this.store.put(x);
+    this.toast("手書きの文字を読み取りました");
   }
 
   async transcribe(id, rid) {

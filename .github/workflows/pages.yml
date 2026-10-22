@@ -10,6 +10,7 @@ on:
       - "ui/**"
       - "web/**"
       - "desktop/lib/**"
+      - "docs/releases/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 

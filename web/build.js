@@ -1,13 +1,15 @@
 // Builds the browser version into dist/: the shared UI (../ui), the bridge (src/main.js, bundling
 // the desktop backend for the browser), the service worker, pdf.js and the home-screen manifest.
-// dist/ is what GitHub Pages serves.
+// dist/ is what GitHub Pages serves. `node build.js --android` builds the same page for the Android
+// app instead (android/app/src/main/assets/www: the phone bridge, no service worker).
 "use strict";
 const fs = require("fs");
 const path = require("path");
 const esbuild = require("esbuild");
 
 const here = __dirname;
-const dist = path.join(here, "dist");
+const ANDROID = process.argv.includes("--android");
+const dist = ANDROID ? path.resolve(here, "../android/app/src/main/assets/www") : path.join(here, "dist");
 const assets = path.resolve(here, "../ui");
 const version = require("./package.json").version;
 
@@ -18,7 +20,17 @@ for (const f of fs.readdirSync(path.join(here, "public"))) fs.copyFileSync(path.
 
 // The same page, with what a browser app needs: a CSP for Google and Gemini, the manifest, and
 // the bridge before app.js.
-const CSP = [
+const CSP = (ANDROID ? [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "media-src 'self' blob:",
+  "connect-src 'self' https://generativelanguage.googleapis.com https://www.googleapis.com https://people.googleapis.com",
+  "worker-src 'self' blob:",
+  "base-uri 'self'",
+  "form-action 'none'",
+] : [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' https://accounts.google.com",
   "style-src 'self' 'unsafe-inline' https://accounts.google.com",
@@ -30,7 +42,7 @@ const CSP = [
   "manifest-src 'self'",
   "base-uri 'self'",
   "form-action 'none'",
-].join("; ");
+]).join("; ");
 let html = fs.readFileSync(path.join(assets, "index.html"), "utf8");
 html = html.replace(/<meta\s+http-equiv="Content-Security-Policy"[\s\S]*?\/>/, `<meta http-equiv="Content-Security-Policy" content="${CSP}" />`);
 html = html.replace(
@@ -93,7 +105,11 @@ const common = {
   legalComments: "none",
   logLevel: "warning",
 };
-esbuild.buildSync({ ...common, entryPoints: [path.join(here, "src/main.js")], outfile: path.join(dist, "bridge.js"), minify: true });
+esbuild.buildSync({ ...common, entryPoints: [path.join(here, ANDROID ? "src/android-main.js" : "src/main.js")], outfile: path.join(dist, "bridge.js"), minify: true });
+if (ANDROID) {
+  console.log(`android ${version} built → ${path.relative(process.cwd(), dist)}`);
+  process.exit(0);
+}
 
 // Everything but media/ and pdf.js is cached for offline use; a new version replaces the cache.
 const shell = ["./", "index.html", "app.js", "style.css", "bridge.js", "manifest.webmanifest", "icon-192.png", "apple-touch-icon.png"];

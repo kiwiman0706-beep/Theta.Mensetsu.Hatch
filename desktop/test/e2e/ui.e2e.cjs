@@ -101,6 +101,42 @@ const model = require("../../lib/model");
       await page.getByRole("button", { name: /保存/ }).last().click();
       for (let i = 0; i < 50 && !(store.people().find((p) => p.name === "鈴木 次郎").evaluations || []).length; i++) await page.waitForTimeout(50);
       assert.strictEqual(store.people().find((p) => p.name === "鈴木 次郎").evaluations[0].score, "A");
+      // A handwritten memo: a mouse line, then a pen line with pressure (fingers ignored after).
+      const before = (store.people().find((p) => p.name === "鈴木 次郎").sketches || []).length;
+      await page.getByRole("button", { name: /手書きで書く/ }).click();
+      const cv = page.locator("#sk-canvas");
+      await cv.waitFor();
+      const r = await cv.boundingBox();
+      await page.mouse.move(r.x + 30, r.y + 40);
+      await page.mouse.down();
+      await page.mouse.move(r.x + 120, r.y + 60, { steps: 8 });
+      await page.mouse.up();
+      await page.evaluate(() => {
+        const c = document.getElementById("sk-canvas"), b = c.getBoundingClientRect();
+        const ev = (type, x, y, extra = {}) => c.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 7, pointerType: "pen", pressure: 0.9, clientX: b.left + x, clientY: b.top + y, buttons: 1, ...extra }));
+        ev("pointerdown", 40, 100);
+        for (let i = 1; i < 10; i++) ev("pointermove", 40 + i * 10, 100 + i * 3);
+        ev("pointerup", 140, 130, { buttons: 0 });
+        // A palm after the pen: ignored.
+        c.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 9, pointerType: "touch", clientX: b.left + 50, clientY: b.top + 200 }));
+      });
+      await page.locator("#sk-title").fill("一次面接メモ");
+      await page.getByRole("button", { name: /^保存$/ }).last().click();
+      const sketched = () => (store.people().find((p) => p.name === "鈴木 次郎").sketches || [])[before];
+      for (let i = 0; i < 60 && !sketched(); i++) await page.waitForTimeout(50);
+      const k = sketched();
+      assert.ok(k && k.file.endsWith(".png") && k.strokes.endsWith(".json"), "saved as picture + strokes");
+      const strokes = JSON.parse(fs.readFileSync(store.mediaFile(k.strokes), "utf8")).strokes;
+      if (width === 360) assert.strictEqual(strokes.length, 2, "mouse + pen; the palm drew nothing");
+      assert.ok(strokes.some((x) => x.p.length >= 10 && x.p.every((pt) => pt[2] === 0.9)), "the whole pen line, with its pressure");
+      assert.ok(fs.statSync(store.mediaFile(k.file)).size > 1000, "a real PNG");
+      await page.locator(".sketchthumb").first().waitFor();
+      await page.screenshot({ path: path.join(shots, `sketch-list-${width}.png`) });
+      // Opening it again brings the strokes back for editing.
+      await page.locator(".sketchthumb").first().click();
+      await page.locator("#sk-canvas").waitFor();
+      await page.screenshot({ path: path.join(shots, `sketch-${width}.png`) });
+      await page.getByLabel("閉じる").click();
       // Menu and its sheets.
       await page.getByRole("button", { name: "メニュー" }).click();
       await page.screenshot({ path: path.join(shots, `menu-${width}.png`), fullPage: true });

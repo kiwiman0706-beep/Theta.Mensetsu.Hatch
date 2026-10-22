@@ -4,3 +4,5 @@ dist/
 desktop/ui/
 *.jks
 *.keystore
+
+!android/signing/mensetsu-dev.jks

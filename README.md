@@ -12,7 +12,7 @@
 | 顔写真 | 履歴書に貼られた写真を自動で切り出し、一覧のサムネイルとGoogle連絡先の写真に |
 | 職種別の表示 | 看護師・准看護師・介護職・医療事務…（一覧は自由に追加・変更。編集画面で新しい職種を直接入力してもよい）。職種ごとのタイル、職種での絞り込み |
 | 選考の管理 | 書類受付→面接予定→面接済み→内定→採用／不採用・辞退・保留、面接日時、評価（★5段階）、**採否決定日・理由・本人への連絡の記録**、今日の面接、面接予定のカレンダー |
-| 面接の記録 | 面接メモ、**録音（PCのマイク）と Gemini による文字起こし・要約**（話者：面接官／応募者） |
+| 面接の記録 | 面接メモ、**手書きメモ（スタイラス対応：筆圧、ペンで書くと手のひらは無視、ペンの消しゴム、罫線・方眼）とGeminiでの文字の読み取り**、**録音と Gemini による文字起こし・要約**（話者：面接官／応募者） |
 | 書類 | 履歴書以外の書類（職務経歴書・免許証の写し・卒業証明書・紹介状・健康診断書・雇用契約書など）を種類つきで人ごとにまとめる |
 | 通勤 | 勤務先の住所を設定すると、Gemini＋Google検索で**通勤時間・運賃・定期代を概算**。乗換案内・Googleマップへのリンク |
 | 採用手続き | 内定・採用にすると**チェックリスト**ができる（入職前の健康診断、抗体価・ワクチン歴、免許証・資格証の原本確認と写し、免許の登録確認、雇用契約書、身元保証書、マイナンバー、年金・雇用保険、通勤届、制服・ID発行、紹介会社への連絡など21項目）。済んだ日・メモ付き。ひな形は施設に合わせて変更でき、Obsidianでもチェックを付けられる |
@@ -28,6 +28,7 @@
 
 | フォルダ | 中身 |
 | --- | --- |
+| `android/` | **Android版**（ネイティブ。書類スキャナー、Play開発者サービスでのGoogle許可、共有からの取り込み）。[`android/README.md`](android/README.md) |
 | `desktop/` | **PC版（Windows / Mac）**。Electron。トレイに常駐し、Vaultフォルダを直接読み書き・Googleドライブと同期。使い方は [`desktop/README.md`](desktop/README.md) |
 | `web/` | **ブラウザ版**（PWA。iPhone・Androidのホーム画面にも置ける）。GitHub Pagesで配信 |
 | `ui/` | 共通の画面（HTML/CSS/JS）。PC版・ブラウザ版の両方が使う |
@@ -35,7 +36,7 @@
 
 ## はじめかた
 
-1. [Releases](https://github.com/kiwiman0706-beep/Theta.Mensetsu.Hatch/releases/latest) から PC版を入れる（Windows：`ThetaMensetsuHatch-Setup-<版>.exe`、Mac：`.dmg`）。
+1. [Releases](https://github.com/kiwiman0706-beep/Theta.Mensetsu.Hatch/releases/latest) から入れる（Windows：`ThetaMensetsuHatch-Setup-<版>.exe`、Mac：`.dmg`、Android：`ThetaMensetsuHatch-<版>.apk`）。
 2. メニュー →「Gemini APIキー・モデル」でAPIキーを入れる（**有料の請求先を設定したプロジェクトのキー**を使ってください。下の注意を参照）。
 3. 「取り込む」で履歴書のPDFを選ぶ（または画面にドラッグ＆ドロップ）。
 4. 複数のPCで使う・Google連絡先に入れるときは、[`docs/SETUP.md`](docs/SETUP.md) の手順でGoogle Cloudに1回だけ登録します（無料・10分ほど）。

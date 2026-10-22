@@ -63,7 +63,7 @@ function edit(p, input) {
 // Two records of the same person (a second application): fill gaps, append lists.
 function merge(target, source) {
   for (const k of V.FIELDS) if (!target[k] && source[k]) target[k] = source[k];
-  for (const k of ["pages", "sources", "notes", "documents", "recordings", "evaluations", "checklist"]) {
+  for (const k of ["pages", "sources", "notes", "documents", "recordings", "evaluations", "checklist", "sketches"]) {
     if (!Array.isArray(source[k])) continue;
     target[k] = [...(target[k] || []), ...source[k]];
   }
@@ -213,6 +213,7 @@ function syncMerge(local, remote, now = Date.now()) {
   union("recordings", "id");
   union("evaluations", "id");
   union("checklist", "id");
+  union("sketches", "id");
   // A box ticked on either PC stays ticked; date and memo filled from the other side.
   for (const c of base.checklist || []) {
     const o = (other.checklist || []).find((x) => x.id === c.id);
@@ -247,6 +248,7 @@ function media(p) {
   for (const k of ["pages", "sources"]) for (const o of p[k] || []) if (o.file) out.add(o.file);
   for (const d of p.documents || []) for (const f of d.files || []) if (f.file) out.add(f.file);
   for (const r of p.recordings || []) if (r.file) out.add(r.file);
+  for (const k of p.sketches || []) for (const f of [k.file, k.strokes]) if (f) out.add(f);
   return out;
 }
 

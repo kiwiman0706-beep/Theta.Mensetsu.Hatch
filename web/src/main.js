@@ -40,7 +40,7 @@ function openFiles(single, action) {
   });
 }
 
-const TYPES = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", pdf: "application/pdf", webm: "audio/webm", ogg: "audio/ogg", m4a: "audio/mp4", mp3: "audio/mpeg", wav: "audio/wav" };
+const TYPES = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", pdf: "application/pdf", webm: "audio/webm", ogg: "audio/ogg", m4a: "audio/mp4", mp3: "audio/mpeg", wav: "audio/wav", json: "application/json" };
 const typeOf = (name) => TYPES[String(name).split(".").pop().toLowerCase()] || "application/octet-stream";
 
 async function blobOf(store, name) {

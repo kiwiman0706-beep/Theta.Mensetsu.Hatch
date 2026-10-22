@@ -10,13 +10,14 @@ const FOLDER = "Applicants";
 const FILES = APP_DIR + "/_files/";
 const H_NOTES = "## 面接メモ",
   H_CHECK = "## 採用手続き",
+  H_SKETCH = "## 手書きメモ",
   H_REC = "## 面接の録音",
   H_EVAL = "## 職員評価",
   H_DOCS = "## 書類",
   H_TEXT = "## 履歴書の全文";
 // Sections the app writes. "面接メモ", "採用手続き" (a task list: ticking a box in Obsidian counts)
 // and "履歴書の全文" are read back; the others are generated from the frontmatter.
-const MANAGED = [H_NOTES, H_CHECK, H_REC, H_EVAL, H_DOCS, H_TEXT];
+const MANAGED = [H_NOTES, H_SKETCH, H_CHECK, H_REC, H_EVAL, H_DOCS, H_TEXT];
 const FREE_MARK = "<!-- ここから下は自由に書けます（アプリは変更しません） -->";
 
 // Record field ⇄ frontmatter key. "l": one value per line (a YAML list), "t": tags.
@@ -61,7 +62,7 @@ const FIELDS = SPEC.map((x) => x[0]);
 const ORDER = [
   "theta", "rev", "id", ...SPEC.map((x) => x[1]), "status", "contact_registered", "contact_unlinked",
   "google_contact", "google_contact_account", "import_key", "not_duplicate", "warnings", "created",
-  "updated", "pages", "originals", "portrait", "portrait_source", "documents", "recordings", "evaluations",
+  "updated", "pages", "originals", "portrait", "portrait_source", "documents", "recordings", "evaluations", "sketches",
 ];
 const OWN = new Set(ORDER);
 // Fields that only make sense on one device (queues, a pending Gemini result): never in the vault.
@@ -192,6 +193,16 @@ function render(p) {
     return m;
   });
   if (evals.length) fm.evaluations = evals;
+  // Handwritten memos: the picture (shown in Obsidian) and the pen strokes (to edit again).
+  const sketches = (p.sketches || [])
+    .filter((k) => k.file)
+    .map((k) => {
+      const m = { id: k.id || "", file: pathOf(k.file), time: iso(k.time || 0) };
+      if (k.strokes) m.strokes = pathOf(k.strokes);
+      for (const x of ["title", "text"]) put(m, x, String(k[x] || "").trim());
+      return m;
+    });
+  if (sketches.length) fm.sketches = sketches;
   for (const [k, v] of Object.entries(p.vaultExtra || {})) if (!OWN.has(k)) fm[k] = v;
 
   let b = "---\n" + dump(fm) + "---\n\n";
@@ -205,6 +216,14 @@ function render(p) {
     b += " ^" + blockId(n.id) + "\n";
   }
   b += "\n";
+  if (sketches.length) {
+    b += H_SKETCH + "\n";
+    for (const k of sketches) {
+      b += `- ${k.time.slice(0, 16).replace("T", " ")}${k.title ? " " + k.title.replace(/\n/g, " ") : ""}\n  ![[${k.file}|480]]\n`;
+      if (k.text) b += "  " + k.text.replace(/\n/g, "\n  ") + "\n";
+    }
+    b += "\n";
+  }
   const checks = p.checklist || [];
   if (checks.length) {
     b += H_CHECK + "\n";
@@ -339,6 +358,15 @@ function parse(md, allowNewId = false) {
       return e;
     });
   if (evals.length) p.evaluations = evals;
+  const sk = (Array.isArray(fm.sketches) ? fm.sketches : [])
+    .filter((m) => m && typeof m === "object" && local(m.file))
+    .map((m) => {
+      const k = { id: str(m.id) || local(m.file), file: local(m.file), time: ms(m.time, Date.now()) };
+      if (local(m.strokes)) k.strokes = local(m.strokes);
+      for (const x of ["title", "text"]) if (str(m[x])) k[x] = String(m[x]).replace(/\r\n/g, "\n").trim();
+      return k;
+    });
+  if (sk.length) p.sketches = sk;
   const extra = {};
   for (const [k, v] of Object.entries(fm)) if (!OWN.has(k)) extra[k] = v;
   if (Object.keys(extra).length) p.vaultExtra = extra;
