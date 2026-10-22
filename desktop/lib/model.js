@@ -9,6 +9,31 @@ const CATEGORIES = [
   "理学療法士", "作業療法士", "言語聴覚士", "臨床工学技士", "管理栄養士・栄養士", "調理", "医療事務", "事務", "その他",
 ];
 
+// What usually has to be done before someone starts at a hospital or clinic (editable in the app).
+const CHECKLIST = [
+  "採用通知・労働条件通知書の交付",
+  "雇用契約書の締結",
+  "入職前の健康診断（健康診断書の提出）",
+  "抗体価・ワクチン接種歴（B型肝炎・麻疹・風疹・水痘・ムンプス）",
+  "免許証の原本確認・写しの提出",
+  "資格証・修了証の原本確認・写しの提出",
+  "免許の登録確認（厚生労働省 医療資格者の資格確認検索など）",
+  "卒業証明書・成績証明書",
+  "身元保証書",
+  "誓約書・守秘義務の同意書",
+  "マイナンバーの確認",
+  "基礎年金番号（年金手帳など）",
+  "雇用保険被保険者証（前職がある場合）",
+  "源泉徴収票（年内に前職がある場合）",
+  "扶養控除等申告書・扶養の届け（該当者）",
+  "給与振込口座の届け",
+  "通勤届・通勤手当の申請",
+  "制服・名札・ロッカーの準備",
+  "電子カルテ・院内システムのID発行",
+  "入職オリエンテーションの日程連絡",
+  "紹介会社への採用・入職日の連絡（紹介会社経由の場合）",
+];
+
 function empty() {
   const now = Date.now();
   const p = { id: crypto.randomUUID(), created: now, updated: now, status: "new", pages: [], sources: [], notes: [] };
@@ -38,7 +63,7 @@ function edit(p, input) {
 // Two records of the same person (a second application): fill gaps, append lists.
 function merge(target, source) {
   for (const k of V.FIELDS) if (!target[k] && source[k]) target[k] = source[k];
-  for (const k of ["pages", "sources", "notes", "documents", "recordings", "evaluations"]) {
+  for (const k of ["pages", "sources", "notes", "documents", "recordings", "evaluations", "checklist"]) {
     if (!Array.isArray(source[k])) continue;
     target[k] = [...(target[k] || []), ...source[k]];
   }
@@ -88,19 +113,32 @@ const cell = (s) => {
 const HEAD = {
   name: "氏名", kana: "ふりがな", birthDate: "生年月日", gender: "性別", category: "職種", position: "応募職種・部署",
   employment: "雇用形態", stage: "選考状況", rating: "評価", decisionDate: "採否決定日", decisionNote: "採否の理由・連絡", hireDate: "入職日",
-  department: "配属先", commuteCost: "通勤費（概算）", appliedDate: "応募日", source: "応募経路", interview: "面接日時",
+  department: "配属先", commuteCost: "通勤費（概算）", appliedDate: "応募日", agency: "紹介会社", agencyContact: "紹介会社の担当者", agencyFee: "紹介手数料・返金規定", source: "応募経路", interview: "面接日時",
   interviewers: "面接担当", startDate: "入職可能日", commute: "通勤", postal: "郵便番号", address: "住所", phone: "電話",
   mobile: "携帯", email: "メール", education: "学歴", career: "職歴", licenses: "免許・資格", motivation: "志望動機",
   selfPr: "自己PR", wishes: "本人希望", tags: "タグ",
 };
 
 function csv(people) {
-  let out = "﻿" + [...V.FIELDS.map((k) => HEAD[k]), "年齢", "面接メモ", "読み取り状態"].map(cell).join(",") + "\r\n";
+  let out = "\uFEFF" + [...V.FIELDS.map((k) => HEAD[k]), "年齢", "採用手続き", "未完了の手続き", "面接メモ", "読み取り状態"].map(cell).join(",") + "\r\n";
   for (const p of people) {
     const notes = (p.notes || []).map((n) => V.iso(n.time || 0).slice(0, 16).replace("T", " ") + " " + n.text).join("\n");
-    out += [...V.FIELDS.map((k) => (k === "stage" ? V.STAGES[p[k]] || p[k] : p[k])), age(p.birthDate), notes, p.status].map(cell).join(",") + "\r\n";
+    out += [...V.FIELDS.map((k) => (k === "stage" ? V.STAGES[p[k]] || p[k] : p[k])), age(p.birthDate), checkProgress(p), (p.checklist || []).filter((c) => !c.done).map((c) => c.item).join("\n"), notes, p.status].map(cell).join(",") + "\r\n";
   }
   return out;
+}
+
+// "5/21" (done / all), or "" without a checklist.
+function checkProgress(p) {
+  const list = p.checklist || [];
+  return list.length ? `${list.filter((c) => c.done).length}/${list.length}` : "";
+}
+
+// Adds the template's items the person does not have yet (by name), all unticked.
+function addChecklist(p, template) {
+  const have = new Set((p.checklist || []).map((c) => String(c.item).trim()));
+  p.checklist = [...(p.checklist || []), ...template.filter((t) => !have.has(String(t).trim())).map((item) => ({ id: crypto.randomUUID(), item, done: false, date: "", note: "" }))];
+  return p;
 }
 
 // ---- the ID photo on a résumé -----------------------------------------------------------
@@ -174,6 +212,15 @@ function syncMerge(local, remote, now = Date.now()) {
   union("documents", "id");
   union("recordings", "id");
   union("evaluations", "id");
+  union("checklist", "id");
+  // A box ticked on either PC stays ticked; date and memo filled from the other side.
+  for (const c of base.checklist || []) {
+    const o = (other.checklist || []).find((x) => x.id === c.id);
+    if (!o) continue;
+    if (o.done && !c.done) Object.assign(c, { done: true, date: c.date || o.date });
+    if (!c.note && o.note) c.note = o.note;
+    if (!c.date && o.date) c.date = o.date;
+  }
   // A transcript made on one PC while the other only has the recording.
   for (const r of base.recordings || []) {
     const o = (other.recordings || []).find((x) => x.id === r.id);
@@ -203,4 +250,4 @@ function media(p) {
   return out;
 }
 
-module.exports = { CATEGORIES, HEAD, empty, edit, merge, applyResult, today, age, csv, photoRect, trimPhotoRect, syncMerge, media };
+module.exports = { CHECKLIST, checkProgress, addChecklist, CATEGORIES, HEAD, empty, edit, merge, applyResult, today, age, csv, photoRect, trimPhotoRect, syncMerge, media };

@@ -86,6 +86,16 @@ const model = require("../../lib/model");
       await page.goto(`http://127.0.0.1:${port}/`);
       await page.getByRole("button", { name: /すべて/ }).click();
       await page.locator(".person", { hasText: "鈴木 次郎" }).click();
+      // Onboarding checklist (made when hired): tick the health check.
+      if (width === 360) await page.getByText("採用手続きのチェックリストを作る").click();
+      const box = page.locator(".check", { hasText: "入職前の健康診断" }).locator("input");
+      await box.waitFor();
+      await box.setChecked(width === 360);
+      const ticked = () => store.people().find((p) => p.name === "鈴木 次郎").checklist.find((c) => /健康診断/.test(c.item)).done;
+      for (let i = 0; i < 50 && ticked() !== (width === 360); i++) await page.waitForTimeout(50);
+      assert.strictEqual(ticked(), width === 360, "ticked, then unticked");
+      await page.locator(".panel h3", { hasText: `採用手続き ${width === 360 ? 1 : 0}/` }).waitFor(); // the count follows at once
+      await page.screenshot({ path: path.join(shots, `checklist-${width}.png`), fullPage: true });
       await page.getByRole("button", { name: /評価を記録/ }).click();
       await page.locator("#ev-score").fill("A");
       await page.getByRole("button", { name: /保存/ }).last().click();
@@ -94,7 +104,7 @@ const model = require("../../lib/model");
       // Menu and its sheets.
       await page.getByRole("button", { name: "メニュー" }).click();
       await page.screenshot({ path: path.join(shots, `menu-${width}.png`), fullPage: true });
-      for (const [row, text] of [["同期", "同期の方法"], ["Googleアカウント", "OAuthクライアントID"], ["Google連絡先への登録", "ラベル名"], ["職種の一覧", "1行に1つ"], ["勤務先の住所", "通勤時間"]]) {
+      for (const [row, text] of [["採用手続きのひな形", "1行に1つ"], ["同期", "同期の方法"], ["Googleアカウント", "OAuthクライアントID"], ["Google連絡先への登録", "ラベル名"], ["職種の一覧", "1行に1つ"], ["勤務先の住所", "通勤時間"]]) {
         await page.getByRole("button", { name: new RegExp("^" + row) }).first().click();
         await page.getByText(text).first().waitFor();
         await page.screenshot({ path: path.join(shots, `sheet-${row}-${width}.png`) });

@@ -9,13 +9,14 @@ const APP_DIR = "Mensetsu";
 const FOLDER = "Applicants";
 const FILES = APP_DIR + "/_files/";
 const H_NOTES = "## 面接メモ",
+  H_CHECK = "## 採用手続き",
   H_REC = "## 面接の録音",
   H_EVAL = "## 職員評価",
   H_DOCS = "## 書類",
   H_TEXT = "## 履歴書の全文";
-// Sections the app writes. "面接メモ" and "履歴書の全文" are read back (edits in Obsidian are kept);
-// the others are generated from the frontmatter.
-const MANAGED = [H_NOTES, H_REC, H_EVAL, H_DOCS, H_TEXT];
+// Sections the app writes. "面接メモ", "採用手続き" (a task list: ticking a box in Obsidian counts)
+// and "履歴書の全文" are read back; the others are generated from the frontmatter.
+const MANAGED = [H_NOTES, H_CHECK, H_REC, H_EVAL, H_DOCS, H_TEXT];
 const FREE_MARK = "<!-- ここから下は自由に書けます（アプリは変更しません） -->";
 
 // Record field ⇄ frontmatter key. "l": one value per line (a YAML list), "t": tags.
@@ -35,6 +36,9 @@ const SPEC = [
   ["department", "department"],
   ["appliedDate", "applied"],
   ["source", "source"],
+  ["agency", "agency"],
+  ["agencyContact", "agency_contact"],
+  ["agencyFee", "agency_fee"],
   ["interview", "interview"],
   ["interviewers", "interviewers"],
   ["startDate", "start_date"],
@@ -201,6 +205,15 @@ function render(p) {
     b += " ^" + blockId(n.id) + "\n";
   }
   b += "\n";
+  const checks = p.checklist || [];
+  if (checks.length) {
+    b += H_CHECK + "\n";
+    for (const c of checks) {
+      const item = String(c.item || "").replace(/\n/g, " ").trim() || "（項目）";
+      b += `- [${c.done ? "x" : " "}] ${item}${c.date ? " 📅 " + c.date : ""}${String(c.note || "").trim() ? " — " + String(c.note).replace(/\n/g, " ").trim() : ""} ^${blockId(c.id)}\n`;
+    }
+    b += "\n";
+  }
   if (recs.length) {
     b += H_REC + "\n";
     for (const r of recs) {
@@ -243,10 +256,11 @@ const str = (v) => {
 };
 const NOTE = /^[-*]\s+(\d{4}-\d{2}-\d{2})(?:[ T](\d{1,2}:\d{2}))?\s*(.*)$/;
 const BLOCK = /\s\^([A-Za-z0-9-]+)\s*$/;
+const CHECK = /^[-*]\s+\[([ xX])\]\s*(.*)$/;
 
 function parse(md, allowNewId = false) {
   md = md.replace(/\r\n/g, "\n");
-  if (md.startsWith("﻿")) md = md.slice(1);
+  if (md.startsWith("\uFEFF")) md = md.slice(1);
   if (!md.startsWith("---\n")) throw new Error("frontmatterがありません");
   const end = md.indexOf("\n---", 4);
   if (end < 0) throw new Error("frontmatterが閉じていません");
@@ -330,6 +344,7 @@ function parse(md, allowNewId = false) {
   if (Object.keys(extra).length) p.vaultExtra = extra;
 
   const notes = [];
+  const checks = [];
   let free = "",
     section = null,
     text = null,
@@ -385,6 +400,30 @@ function parse(md, allowNewId = false) {
         free += line + "\n";
         last = null;
       }
+    } else if (section === H_CHECK) {
+      const m = CHECK.exec(line.trim());
+      if (m) {
+        let rest = m[2];
+        let cid = null;
+        const bm = BLOCK.exec(" " + rest);
+        if (bm) {
+          cid = bm[1];
+          rest = (" " + rest).slice(0, bm.index).trim();
+        }
+        let note = "";
+        const ni = rest.indexOf(" — ");
+        if (ni >= 0) {
+          note = rest.slice(ni + 3).trim();
+          rest = rest.slice(0, ni).trim();
+        }
+        let date = "";
+        const dm = / 📅 (\d{4}-\d{2}-\d{2})$/.exec(rest);
+        if (dm) {
+          date = dm[1];
+          rest = rest.slice(0, dm.index).trim();
+        }
+        checks.push({ id: cid || nameUUID("check" + rest), item: rest, done: m[1] !== " ", date, note });
+      } else if (line.trim()) free += line + "\n";
     } else if (section === H_TEXT) {
       if (line.startsWith("```")) {
         text = text == null ? "" : text;
@@ -394,6 +433,7 @@ function parse(md, allowNewId = false) {
     }
   }
   p.notes = notes;
+  if (checks.length) p.checklist = checks;
   if (text != null && text.trim()) p.rawText = text.trim();
   if (free.trim()) p.vaultFree = free.trim();
   return p;

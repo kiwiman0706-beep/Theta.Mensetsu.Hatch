@@ -157,3 +157,25 @@ test("Obsidian edit on this PC's folder (seen by reloading) goes up with the fil
   await b.run();
   assert.strictEqual(b.store.person(p.id).stage, "interviewed");
 });
+
+test("two PCs tick different onboarding items: both stay ticked", async () => {
+  const drive = new FakeDrive();
+  const a = pc(drive), b = pc(drive);
+  const p = model.addChecklist(applicant("入職 予定", { stage: "hired", updated: 1000 }), ["健康診断書", "免許証の写し", "雇用契約書"]);
+  a.store.put(p, false);
+  await a.run();
+  await b.run();
+  const pa = a.store.person(p.id);
+  Object.assign(pa.checklist[0], { done: true, date: "2026-11-20" });
+  pa.updated = 2000;
+  a.store.put(pa, false);
+  const pb = b.store.person(p.id);
+  Object.assign(pb.checklist[1], { done: true, date: "2026-11-21", note: "原本確認済み" });
+  pb.updated = 3000;
+  b.store.put(pb, false);
+  await a.run();
+  await b.run();
+  await a.run();
+  for (const s of [a.store, b.store]) assert.deepStrictEqual(s.person(p.id).checklist.map((c) => c.done), [true, true, false]);
+  assert.strictEqual(model.checkProgress(a.store.person(p.id)), "2/3");
+});

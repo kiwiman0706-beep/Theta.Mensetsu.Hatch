@@ -74,7 +74,10 @@ const groups = [
     ["position", "応募職種・希望部署（書類の記載）"],
     ["employment", "雇用形態（常勤・パートなど）"],
     ["appliedDate", "応募日", "date"],
-    ["source", "応募経路（求人サイト・ハローワーク・紹介など）"],
+    ["source", "応募経路（求人サイト・ハローワーク・紹介会社など）"],
+    ["agency", "紹介会社（紹介会社経由のとき）"],
+    ["agencyContact", "紹介会社の担当者・連絡先"],
+    ["agencyFee", "紹介手数料・返金規定", "area"],
     ["stage", "選考状況", "stage"],
     ["interview", "面接日時", "datetime"],
     ["interviewers", "面接担当"],
@@ -248,7 +251,7 @@ function render() {
 // A background update (sync, reading) must not take the cursor away from what is being typed.
 function typing() {
   const a = document.activeElement;
-  return !!(a && $("app").contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.id !== "search");
+  return !!(a && $("app").contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.id !== "search" && !["checkbox", "radio"].includes(a.type));
 }
 document.addEventListener("focusout", () =>
   setTimeout(() => {
@@ -277,6 +280,8 @@ const FILTERS = [
   ["interviewed", "面接済み", (p) => p.stage === "interviewed" || p.stage === "hold"],
   ["offered", "内定・採用", (p) => p.stage === "offered" || p.stage === "hired"],
   ["staff", "職員（採用済み）", (p) => p.stage === "hired"],
+  ["onboarding", "手続き中", (p) => (p.checklist || []).some((c) => !c.done)],
+  ["agency", "紹介会社経由", (p) => !!String(p.agency || "").trim()],
   ["closed", "不採用・辞退", (p) => p.stage === "rejected" || p.stage === "declined"],
   ["review", "要確認", (p) => p.status !== "confirmed" || !!p.suggestion],
   ["all", "すべて", () => true],
@@ -315,10 +320,10 @@ function listContent() {
   if (layout === "category") return categoryView();
   if (!a.length) return `<div class="empty"><h2>該当する応募者がいません</h2><p>上の絞り込み（${esc((FILTERS.find((x) => x[0] === filter) || [])[1] || "")}${catFilter ? "・" + esc(catFilter === "-" ? "職種未設定" : catFilter) : ""}）や検索を変えてみてください。</p></div>`;
   if (layout === "table")
-    return `<div class="tablewrap"><table><thead><tr><th>氏名</th><th>年齢</th><th>職種</th><th>応募日</th><th>面接日時</th><th>選考状況</th><th>評価</th><th>連絡先</th></tr></thead><tbody>${a
+    return `<div class="tablewrap"><table><thead><tr><th>氏名</th><th>年齢</th><th>職種</th><th>応募日</th><th>面接日時</th><th>選考状況</th><th>評価</th><th>経路</th><th>連絡先</th></tr></thead><tbody>${a
       .map(
         (p) =>
-          `<tr tabindex="0" role="button" onclick="openPerson('${p.id}',event)" onauxclick="openPerson('${p.id}',event)" onkeydown="if(event.key==='Enter')openPerson('${p.id}')"><td><b>${esc(title(p))}</b><br><small>${esc(p.kana)}</small></td><td>${esc(age(p.birthDate))}</td><td>${esc(p.category)}<br><small>${esc(p.position)}</small></td><td>${esc(when(p.appliedDate))}</td><td>${esc(when(p.interview))}</td><td>${stageBadge(p)}</td><td class="stars">${stars(p.rating)}</td><td>${esc(String(p.mobile || p.phone || "").split("\n")[0])}<br><small>${esc(String(p.email || "").split("\n")[0])}</small></td></tr>`,
+          `<tr tabindex="0" role="button" onclick="openPerson('${p.id}',event)" onauxclick="openPerson('${p.id}',event)" onkeydown="if(event.key==='Enter')openPerson('${p.id}')"><td><b>${esc(title(p))}</b><br><small>${esc(p.kana)}</small></td><td>${esc(age(p.birthDate))}</td><td>${esc(p.category)}<br><small>${esc(p.position)}</small></td><td>${esc(when(p.appliedDate))}</td><td>${esc(when(p.interview))}</td><td>${stageBadge(p)}</td><td class="stars">${stars(p.rating)}</td><td>${p.agency ? "紹介：" + esc(p.agency) : esc(p.source)}${(p.checklist || []).length ? `<br><small>手続き ${p.checklist.filter((c) => c.done).length}/${p.checklist.length}</small>` : ""}</td><td>${esc(String(p.mobile || p.phone || "").split("\n")[0])}<br><small>${esc(String(p.email || "").split("\n")[0])}</small></td></tr>`,
       )
       .join("")}</tbody></table></div><p class="caption">表は横にスクロールできます。CSVはメニューから書き出せます（今の絞り込みのままでも書き出せます）。</p>`;
   return personCards(a);
@@ -327,7 +332,7 @@ function personCards(a) {
   return `<div class="cardlist">${a
     .map(
       (p) =>
-        `<button class="person" onclick="openPerson('${p.id}',event)" onauxclick="openPerson('${p.id}',event)">${avatar(p)}<div class="personbody"><h3 class="ell">${esc(title(p))}${age(p.birthDate) !== "" ? ` <small>${age(p.birthDate)}歳</small>` : ""}</h3><div class="company ell">${esc(job(p))}${p.position ? " ・ " + esc(p.position) : ""}</div><div class="personmeta">${stageBadge(p)}${p.queue ? `<span class="badge new">処理中</span>` : p.status === "confirmed" && !p.suggestion ? "" : `<span class="badge review">${p.suggestion ? "要確認" : status(p)}</span>`}${p.interview ? `<span class="when">${icon("cal")}${esc(when(p.interview))}</span>` : p.appliedDate ? `<span>応募 ${esc(when(p.appliedDate))}</span>` : ""}${+p.rating ? `<span class="stars">${stars(p.rating)}</span>` : ""}${p.contactId ? `<span title="Google連絡先に登録済み">${icon("user")}</span>` : ""}${p.notes?.length ? `<span>メモ ${p.notes.length}</span>` : ""}</div></div><span class="chevron">${icon("next")}</span></button>`,
+        `<button class="person" onclick="openPerson('${p.id}',event)" onauxclick="openPerson('${p.id}',event)">${avatar(p)}<div class="personbody"><h3 class="ell">${esc(title(p))}${age(p.birthDate) !== "" ? ` <small>${age(p.birthDate)}歳</small>` : ""}</h3><div class="company ell">${esc(job(p))}${p.position ? " ・ " + esc(p.position) : ""}</div><div class="personmeta">${stageBadge(p)}${p.queue ? `<span class="badge new">処理中</span>` : p.status === "confirmed" && !p.suggestion ? "" : `<span class="badge review">${p.suggestion ? "要確認" : status(p)}</span>`}${p.interview ? `<span class="when">${icon("cal")}${esc(when(p.interview))}</span>` : p.appliedDate ? `<span>応募 ${esc(when(p.appliedDate))}</span>` : ""}${+p.rating ? `<span class="stars">${stars(p.rating)}</span>` : ""}${p.agency ? `<span>紹介：${esc(p.agency)}</span>` : ""}${(p.checklist || []).length ? `<span class="${p.checklist.every((c) => c.done) ? "" : "when"}">${icon("check")}手続き ${p.checklist.filter((c) => c.done).length}/${p.checklist.length}</span>` : ""}${p.contactId ? `<span title="Google連絡先に登録済み">${icon("user")}</span>` : ""}${p.notes?.length ? `<span>メモ ${p.notes.length}</span>` : ""}</div></div><span class="chevron">${icon("next")}</span></button>`,
     )
     .join("")}</div>`;
 }
@@ -523,6 +528,38 @@ function commuteBox(p) {
       : ""
   }</section>`;
 }
+// Onboarding: health check, licences to bring, contracts… ticked off one by one (also in Obsidian).
+function checkBox(p) {
+  const list = p.checklist || [];
+  if (!list.length && !["offered", "hired"].includes(p.stage)) return "";
+  const done = list.filter((c) => c.done).length;
+  return `<section class="panel"><h3>採用手続き <small>${done}/${list.length}</small></h3>${
+    list.length
+      ? `<div class="progress"><i style="width:${Math.round((done / list.length) * 100)}%"></i></div><div class="checks">${list
+          .map(
+            (c) =>
+              `<div class="check ${c.done ? "done" : ""}"><label><input type="checkbox" ${c.done ? "checked" : ""} onchange="call('checkSet',{id:selected,cid:'${esc(c.id)}',done:this.checked})"><span>${esc(c.item)}${c.date ? ` <small>${esc(when(c.date))}</small>` : ""}${c.note ? `<small class="cnote">${esc(c.note)}</small>` : ""}</span></label><button class="noflex" onclick="checkSheet('${esc(c.id)}')" aria-label="日付・メモ">${icon("edit")}</button></div>`,
+          )
+          .join("")}</div><div class="row gap"><input id="newcheck" placeholder="項目を追加（例：看護師免許の原本を持参）" onkeydown="if(event.key==='Enter')checkAdd()"><button class="outline noflex" onclick="checkAdd()">${icon("plus")}追加</button></div><button class="link" onclick="call('checkCreate',{id:selected})">ひな形の項目で足りないものを足す</button>`
+      : `<button class="secondary full" onclick="call('checkCreate',{id:selected})">${icon("check")}採用手続きのチェックリストを作る</button>`
+  }</section>`;
+}
+function checkAdd() {
+  const v = $("newcheck").value.trim();
+  if (v) call("checkAdd", { id: selected, item: v });
+}
+function checkSheet(cid) {
+  const c = (getPerson().checklist || []).find((x) => x.id === cid);
+  if (!c) return;
+  modal(
+    `<h2>${icon("check")} 手続きの項目</h2><label class="label">項目</label><input id="ck-item" value="${esc(c.item)}"><label class="label">済んだ日</label><input type="date" id="ck-date" value="${esc(c.date || "")}"><label class="label">メモ（受け取った書類・期限・担当など）</label><textarea id="ck-note" rows="3">${esc(c.note || "")}</textarea><button class="primary full gap" onclick="call('checkSet',{id:selected,cid:'${esc(cid)}',item:$('ck-item').value,date:$('ck-date').value,note:$('ck-note').value,done:!!$('ck-date').value||${c.done}});closeModal()">${icon("check")}保存</button><button class="danger full" onclick="if(confirm('この項目を消しますか？')){call('checkRemove',{id:selected,cid:'${esc(cid)}'});closeModal()}">項目を消す</button>`,
+  );
+}
+function checklistSheet() {
+  modal(
+    `<h2>${icon("check")} 採用手続きのひな形</h2><p class="caption">内定・採用にしたとき、この項目でチェックリストを作ります。1行に1つ。施設のやり方に合わせて直してください（すでに作ったチェックリストは変わりません。詳細画面の「ひな形の項目で足りないものを足す」で追加できます）。</p><textarea id="cktpl" rows="16">${esc((state.checklistTemplate || []).join("\n"))}</textarea><button class="primary full gap" onclick="call('settings',{checklist:$('cktpl').value});closeModal()">保存</button><button class="outline full" onclick="if(confirm('最初のひな形に戻しますか？')){call('settings',{checklist:''});closeModal()}">最初のひな形に戻す</button>`,
+  );
+}
 function decisionBox(p) {
   if (!p.decisionDate && !p.decisionNote && !["offered", "hired", "rejected", "declined"].includes(p.stage)) return "";
   return `<section class="panel"><h3>採否 ${stageBadge(p)}</h3><div class="infogrid">${p.decisionDate ? infoRow("decisionDate", "決定日", when(p.decisionDate, true)) : ""}${p.hireDate ? infoRow("hireDate", "入職日", when(p.hireDate, true)) : ""}${p.department ? infoRow("department", "配属先", p.department) : ""}</div>${p.decisionNote ? `<div class="para"><small>理由・本人への連絡</small><p class="pre">${esc(p.decisionNote)}</p></div>` : `<button class="link" onclick="beginEdit()">採否の理由・連絡の記録を書く</button>`}</section>`;
@@ -687,10 +724,10 @@ function detail() {
   const a = age(p.birthDate);
   const docs = p.documents || [];
   document.title = title(p) + " - Theta Mensetsu Hatch";
-  return `${backbar("", `${can("windows") && !solo ? `<button onclick="openWindow('${p.id}')" aria-label="別ウインドウで開く" title="別ウインドウで開く">${icon("share")}</button>` : ""}<button onclick="beginEdit()" aria-label="編集">${icon("edit")}</button><button onclick="detailMenu()" aria-label="その他の操作">${icon("more")}</button>`)}<div class="detailsHead"><button class="facebtn" onclick="${p.portrait ? `viewFile('${esc(p.portrait)}')` : "assetSheet()"}" aria-label="顔写真">${avatar(p, "big")}</button><div class="content"><small>${esc(p.kana)}</small><h1>${esc(title(p))}</h1><p class="muted">${[a !== "" ? a + "歳" : "", p.gender, p.birthDate ? "生年月日 " + when(p.birthDate, true).replace(/\(.\)/, "") : ""].filter(Boolean).map(esc).join(" ・ ")}</p><p><b>${esc(job(p))}</b>${p.position ? " ・ " + esc(p.position) : ""}${p.employment ? " ・ " + esc(p.employment) : ""}</p>${p.status === "confirmed" && !p.suggestion ? "" : `<span class="badge review">${p.suggestion ? "読み取り結果あり" : status(p)}</span>`}</div></div>
+  return `${backbar("", `${can("windows") && !solo ? `<button onclick="openWindow('${p.id}')" aria-label="別ウインドウで開く" title="別ウインドウで開く">${icon("share")}</button>` : ""}<button onclick="beginEdit()" aria-label="編集">${icon("edit")}</button><button onclick="detailMenu()" aria-label="その他の操作">${icon("more")}</button>`)}<div class="detailsHead"><button class="facebtn" onclick="${p.portrait ? `viewFile('${esc(p.portrait)}')` : "assetSheet()"}" aria-label="顔写真">${avatar(p, "big")}</button><div class="content"><small>${esc(p.kana)}</small><h1>${esc(title(p))}</h1><p class="muted">${[a !== "" ? a + "歳" : "", p.gender, p.birthDate ? "生年月日 " + when(p.birthDate, true).replace(/\(.\)/, "") : ""].filter(Boolean).map(esc).join(" ・ ")}</p><p><b>${esc(job(p))}</b>${p.position ? " ・ " + esc(p.position) : ""}${p.employment ? " ・ " + esc(p.employment) : ""}</p>${p.agency ? `<span class="badge st-scheduled">紹介：${esc(p.agency)}</span> ` : ""}${p.status === "confirmed" && !p.suggestion ? "" : `<span class="badge review">${p.suggestion ? "読み取り結果あり" : status(p)}</span>`}</div></div>
 <div class="selection panel"><label><span class="label">選考状況</span><select onchange="setField('stage',this.value)">${STAGES.map(([v, l]) => `<option value="${v}" ${p.stage === v ? "selected" : ""}>${l}</option>`).join("")}</select></label><label><span class="label">面接日時</span><input type="datetime-local" value="${esc(toLocalInput(p.interview))}" onchange="setField('interview',fromLocalInput(this.value))"></label><div><span class="label">評価</span><div class="rate" role="radiogroup" aria-label="評価">${[1, 2, 3, 4, 5].map((n) => `<button class="${+p.rating >= n ? "on" : ""}" onclick="setField('rating','${+p.rating === n ? "" : n}')" aria-label="${n}">${icon("star")}</button>`).join("")}</div></div></div>
 <div class="gap">${primaryAction(p)}</div>${p.warnings ? `<div class="tip warning gap">読み取り時の注意：${esc(p.warnings)}</div>` : ""}${p.queueError ? `<div class="tip warning gap">処理できませんでした：${esc(p.queueError)}</div>` : ""}<div class="gap">${contactBox(p)}</div>
-<div class="detailcols"><div>${section("連絡先", ["mobile", "phone", "email", "postal", "address"], p)}${commuteBox(p)}${decisionBox(p)}${section("応募", ["appliedDate", "source", "interviewers", "startDate", "tags"], p)}${section("学歴・職歴・資格", ["education", "career", "licenses"], p, true)}${section("志望動機など", ["motivation", "selfPr", "wishes"], p, true)}${
+<div class="detailcols"><div>${section("連絡先", ["mobile", "phone", "email", "postal", "address"], p)}${commuteBox(p)}${decisionBox(p)}${checkBox(p)}${section("応募", ["appliedDate", "source", "agency", "agencyContact", "agencyFee", "interviewers", "startDate", "tags"], p)}${section("学歴・職歴・資格", ["education", "career", "licenses"], p, true)}${section("志望動機など", ["motivation", "selfPr", "wishes"], p, true)}${
     !FIELDS.some((k) => !["name", "kana", "stage", "rating", "interview", "category", "position", "employment", "birthDate", "gender"].includes(k) && String(p[k] || "").trim())
       ? `<p class="caption">まだ詳しい情報がありません。読み取るか、右上の編集から入力してください。</p>`
       : ""
@@ -798,7 +835,7 @@ function beginEdit() {
 function fieldInput([k, l, kind]) {
   const v = draft[k] ?? "";
   const set = `draft['${k}']=this.value`;
-  const wide = ["address", "position", "source", "commute", "commuteCost", "motivation", "selfPr", "wishes", "tags", "interviewers"].includes(k) || kind === "long" || kind === "history";
+  const wide = ["address", "position", "source", "agencyFee", "commute", "commuteCost", "motivation", "selfPr", "wishes", "tags", "interviewers"].includes(k) || kind === "long" || kind === "history";
   let input;
   if (kind === "category") {
     // Pick one, or type a new job: it appears in the lists on every PC once saved.
@@ -1219,6 +1256,7 @@ function menuPage() {
     menuRow("help", "Google連携の初期設定ガイド", "最初に1回だけ（Google Cloudへの登録）", "setupGuide()"),
   ]))}${section("整理", [
  menuRow("map", "勤務先の住所", state.workplace ? esc(state.workplace) : "未設定（通勤の概算に使います）", "workplaceSheet()"),
+    menuRow("check", "採用手続きのひな形", `${(state.checklistTemplate || []).length}項目（健康診断・免許の持参・契約など）`, "checklistSheet()"),
     menuRow("grid", "職種の一覧", (state.categories || []).slice(0, 6).map(esc).join("・") + ((state.categories || []).length > 6 ? "…" : ""), "categorySheet()"),
     only("contacts", menuRow("user", "Google連絡先への登録", (state.contactLabel ? "ラベル「" + esc(state.contactLabel) + "」" : "ラベルなし") + (state.autoContact ? " ・ 自動" : " ・ 手動"), "contactSettingsSheet()")),
     menuRow("link", "同じ人の可能性", dupes().length ? dupes().length + "件" : "ありません", "dupSheet()"),

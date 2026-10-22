@@ -70,6 +70,15 @@ class Backend {
   syncOn() {
     return this.syncMode() === "drive" && this.settings.get("syncEnabled", false) && !!this.gSync;
   }
+  checklistTemplate() {
+    const c = this.settings.get("checklist", null);
+    return Array.isArray(c) && c.length ? c : model.CHECKLIST;
+  }
+  // An offer or a hire starts the onboarding checklist (once).
+  withChecklist(p) {
+    if (["offered", "hired"].includes(p.stage) && !(p.checklist || []).length) model.addChecklist(p, this.checklistTemplate());
+    return p;
+  }
   categories() {
     const c = this.settings.get("categories", null);
     return Array.isArray(c) && c.length ? c : model.CATEGORIES;
@@ -93,6 +102,7 @@ class Backend {
       caps: this.caps,
       people,
       categories: this.categories(),
+      checklistTemplate: this.checklistTemplate(),
       keySet: !!this.secrets.get(),
       model: s.get("model", "gemini-2.5-flash"),
       format: s.get("format", "legacy"),
@@ -163,7 +173,7 @@ class Backend {
         return this.event("open", p.id);
       }
       case "save": {
-        const p = model.edit(st.person(id), q.person || {});
+        const p = this.withChecklist(model.edit(st.person(id), q.person || {}));
         delete p.queueError;
         st.put(p);
         this.event("saved", id);
@@ -173,7 +183,7 @@ class Backend {
       }
       case "set": {
         // A quick change from the detail screen (stage, rating, interview time).
-        const p = model.edit(st.person(id), q.fields || {});
+        const p = this.withChecklist(model.edit(st.person(id), q.fields || {}));
         st.put(p);
         return this.contactChanged(id);
       }
@@ -238,6 +248,36 @@ class Backend {
           st.put(p);
         }
         return;
+      }
+      case "checkCreate": {
+        const p = model.addChecklist(st.person(id), this.checklistTemplate());
+        return st.put(p);
+      }
+      case "checkAdd": {
+        const item = String(q.item || "").trim();
+        if (!item) return;
+        const p = st.person(id);
+        p.checklist = [...(p.checklist || []), { id: crypto.randomUUID(), item, done: false, date: "", note: "" }];
+        return st.put(p);
+      }
+      case "checkSet": {
+        const p = st.person(id);
+        const c = (p.checklist || []).find((x) => x.id === q.cid);
+        if (!c) return;
+        if ("done" in q) {
+          c.done = !!q.done;
+          if (c.done && !c.date) c.date = model.today(Date.now());
+          if (!c.done) c.date = "";
+        }
+        if ("date" in q && (q.date === "" || /^\d{4}-\d{2}-\d{2}$/.test(q.date))) c.date = q.date;
+        if ("note" in q) c.note = String(q.note || "").trim();
+        if ("item" in q && String(q.item || "").trim()) c.item = String(q.item).trim();
+        return st.put(p);
+      }
+      case "checkRemove": {
+        const p = st.person(id);
+        p.checklist = (p.checklist || []).filter((x) => x.id !== q.cid);
+        return st.put(p);
       }
       case "evalSave": {
         // A staff evaluation after hiring (or any assessment worth keeping on file).
@@ -489,6 +529,10 @@ class Backend {
     if ("categories" in q) {
       const list = [...new Set(String(q.categories || "").split(/[\n,、]/).map((x) => x.trim()).filter(Boolean))].slice(0, 60);
       set.categories = list.length ? list : null;
+    }
+    if ("checklist" in q) {
+      const list = [...new Set(String(q.checklist || "").split("\n").map((x) => x.trim()).filter(Boolean))].slice(0, 100);
+      set.checklist = list.length ? list : null;
     }
     if ("syncMode" in q) set.syncMode = q.syncMode === "drive" ? "drive" : "folder";
     if ("googleClientId" in q) {

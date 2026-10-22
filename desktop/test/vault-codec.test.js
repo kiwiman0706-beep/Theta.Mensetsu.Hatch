@@ -24,6 +24,11 @@ function sample() {
     ],
     documents: [{ id: "d1", date: "2026-10-21", kind: "免許証・資格証の写し", title: "看護師免許", files: [{ file: "d1.jpg" }, { file: "d1.pdf", original: true }] }],
     recordings: [{ id: "r1", file: "r1.webm", time: 1709700000000, seconds: 1501, title: "一次面接", summary: "・夜勤可", transcript: "面接官: どうぞ\n応募者: よろしくお願いします" }],
+    agency: "○○メディカルキャリア", agencyContact: "担当 田中 03-0000-0000", agencyFee: "理論年収の20%\n3か月以内の退職は返金",
+    checklist: [
+      { id: "c1", item: "入職前の健康診断（健康診断書の提出）", done: true, date: "2026-11-20", note: "原本受領" },
+      { id: "c2", item: "看護師免許の原本確認", done: false, date: "", note: "" },
+    ],
     evaluations: [{ id: "e1", date: "2027-09-30", period: "試用期間", evaluator: "看護部長", score: "A", text: "良好" }],
   });
   return p;
@@ -42,6 +47,7 @@ test("round trip keeps everything shared, nothing device-only", () => {
   assert.deepEqual(q.notes, p.notes);
   assert.deepEqual(q.recordings, p.recordings);
   assert.deepEqual(q.evaluations, p.evaluations);
+  assert.deepEqual(q.checklist, p.checklist);
   assert.equal(q.documents[0].kind, "免許証・資格証の写し");
   assert.deepEqual(q.documents[0].files.map((f) => !!f.original), [false, true]);
   assert.equal(V.render(q), md, "stable");
@@ -58,6 +64,13 @@ test("Obsidian edits: frontmatter, notes, free text; unknown keys kept", () => {
   assert.match(q.vaultFree, /自分用のメモ/);
   assert.deepEqual(q.vaultExtra, { cssclasses: ["wide"] });
   assert.match(V.render(q), /cssclasses:/);
+});
+
+test("ticking a box of 採用手続き in Obsidian counts", () => {
+  const md = V.render(sample()).replace("- [ ] 看護師免許の原本確認", "- [x] 看護師免許の原本確認").replace("^c2\n", "^c2\n- [ ] Obsidianで足した手続き\n");
+  const q = V.parse(md);
+  assert.deepEqual(q.checklist.map((c) => [c.item, c.done]), [["入職前の健康診断（健康診断書の提出）", true], ["看護師免許の原本確認", true], ["Obsidianで足した手続き", false]]);
+  assert.equal(q.checklist[0].note, "原本受領");
 });
 
 test("hand-written note gets an id; file name is name（職種）", () => {
