@@ -1,0 +1,122 @@
+# Push a tag like v0.1.0, or run it by hand (Actions → Release → Run workflow: the tag is made
+# from the version in desktop/package.json) → tests, then the Windows installer and the Mac builds,
+# published together as one GitHub Release (the PC app checks it for updates).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        name: Tag, desktop and web versions agree
+        run: |
+          desktop="$(node -p 'require("./desktop/package.json").version')"
+          web="$(node -p 'require("./web/package.json").version')"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then tag="${GITHUB_REF_NAME#v}"; else tag="$desktop"; fi
+          echo "tag=$tag desktop=$desktop web=$web"
+          test "$tag" = "$desktop" && test "$tag" = "$web"
+          test -f "docs/releases/v$tag.md"
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+          echo "tag=v$tag" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Desktop tests
+        working-directory: desktop
+        run: npm ci --ignore-scripts && npm test
+      - name: Web version (unit, build)
+        working-directory: web
+        run: npm ci && npm test && npm run build
+      - name: Screens (Chromium)
+        run: |
+          npm install -g playwright@1.56.1
+          npx playwright install --with-deps chromium
+          NODE_PATH="$(npm root -g)" node desktop/test/e2e/ui.e2e.cjs
+          NODE_PATH="$(npm root -g)" node web/test/e2e.cjs
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Installer and zip
+        working-directory: desktop
+        run: npm ci && npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.exe.blockmap
+            desktop/dist/*.zip
+            desktop/dist/latest.yml
+          if-no-files-found: error
+
+  mac:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: dmg and zip (Apple silicon and Intel)
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm ci && npm run dist:mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: |
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
+            desktop/dist/*.blockmap
+            desktop/dist/latest-mac.yml
+          if-no-files-found: error
+
+  release:
+    needs: [check, windows, mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          ls -la out
+          # Re-running (e.g. after adding the signing secrets) adds or replaces the files.
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" out/* --clobber
+          else
+            # Run by hand, the tag is created on this commit.
+            gh release create "$TAG" out/* \
+              --target "$GITHUB_SHA" \
+              --title "Theta Mensetsu Hatch ${{ needs.check.outputs.version }}" \
+              --notes-file "docs/releases/$TAG.md"
+          fi

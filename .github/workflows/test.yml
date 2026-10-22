@@ -1,0 +1,27 @@
+# Tests on every push and pull request: the Vault format, sync (two PCs + a browser against a fake
+# Google Drive), contacts, the HTTP bridge, and the screens in Chromium.
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Desktop (unit)
+        working-directory: desktop
+        run: npm ci --ignore-scripts && npm test
+      - name: Web (unit, build)
+        working-directory: web
+        run: npm ci && npm test && npm run build
+      - name: Screens (Chromium)
+        run: |
+          npm install -g playwright@1.56.1
+          npx playwright install --with-deps chromium
+          NODE_PATH="$(npm root -g)" node desktop/test/e2e/ui.e2e.cjs
+          NODE_PATH="$(npm root -g)" node web/test/e2e.cjs

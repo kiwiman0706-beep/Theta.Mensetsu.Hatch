@@ -1,0 +1,34 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>pdf</title>
+<script type="module">
+  // Hidden helper: renders each PDF page to a JPEG for the importer (desktop/main.js).
+  import * as pdfjs from "/pdf/pdf.mjs";
+  pdfjs.GlobalWorkerOptions.workerSrc = "/pdf/pdf.worker.mjs";
+  window.pdfBridge.onJob(async ({ id, data, max }) => {
+    try {
+      const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+      const doc = await pdfjs.getDocument({ data: bytes, isEvalSupported: false, cMapUrl: "/pdf/cmaps/", cMapPacked: true, standardFontDataUrl: "/pdf/standard_fonts/" }).promise;
+      if (doc.numPages > 100) throw new Error("PDFは100ページまでです");
+      const pages = [];
+      for (let n = 1; n <= doc.numPages; n++) {
+        const page = await doc.getPage(n);
+        const base = page.getViewport({ scale: 1 });
+        const scale = max / Math.max(base.width, base.height);
+        const vp = page.getViewport({ scale });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.floor(vp.width));
+        canvas.height = Math.max(1, Math.floor(vp.height));
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, viewport: vp }).promise;
+        pages.push(canvas.toDataURL("image/jpeg", 0.88).split(",")[1]);
+      }
+      window.pdfBridge.done(id, { pages });
+    } catch (e) {
+      window.pdfBridge.done(id, { error: String(e.message || e) });
+    }
+  });
+  window.pdfBridge.ready();
+</script>

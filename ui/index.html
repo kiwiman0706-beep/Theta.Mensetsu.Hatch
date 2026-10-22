@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Theta Mensetsu Hatch</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="modal"></div>
+    <div id="busy" hidden>
+      <div class="loading">
+        <div class="spinner"></div>
+        <h3>処理しています</h3>
+        <p id="busytext"></p>
+        <small
+          >完了までアプリを開いておいてください。</small
+        >
+      </div>
+    </div>
+    <div id="toast" role="status"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,102 @@
+{
+  "name": "theta-mensetsu-hatch",
+  "productName": "Theta Mensetsu Hatch",
+  "version": "0.1.0",
+  "description": "Theta Mensetsu Hatch for Windows / Mac — applicants from résumés, synced with Google Drive (Theta Vault).",
+  "main": "main.js",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "sync-ui": "node scripts/sync-ui.js",
+    "start": "npm run sync-ui && electron .",
+    "test": "npm run sync-ui && node --test test/*.test.js",
+    "dist:win": "npm run sync-ui && electron-builder --win --publish never",
+    "dist:mac": "npm run sync-ui && electron-builder --mac --publish never",
+    "test:e2e": "node test/e2e/ui.e2e.cjs && node test/e2e/electron-smoke.cjs"
+  },
+  "dependencies": {
+    "electron-updater": "6.3.9",
+    "pdfjs-dist": "4.10.38",
+    "yaml": "2.6.1"
+  },
+  "devDependencies": {
+    "electron": "31.7.7",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "jp.yaegaki.theta.mensetsu",
+    "productName": "Theta Mensetsu Hatch",
+    "files": [
+      "main.js",
+      "lib/**",
+      "ui/**",
+      "assets/**",
+      "package.json",
+      "!node_modules/@napi-rs/**",
+      "!node_modules/pdfjs-dist/{build,web,image_decoders,types}/**",
+      "!node_modules/pdfjs-dist/legacy/{web,image_decoders}/**",
+      "!**/*.map"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "identity": null
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "icon": "assets/icon.png",
+    "publish": {
+      "provider": "github",
+      "owner": "kiwiman0706-beep",
+      "repo": "Theta.Mensetsu.Hatch",
+      "releaseType": "release"
+    },
+    "artifactName": "ThetaMensetsuHatch-${version}-${os}-${arch}.${ext}",
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "ThetaMensetsuHatch-Setup-${version}.${ext}",
+      "shortcutName": "Theta Mensetsu Hatch",
+      "deleteAppDataOnUninstall": false
+    },
+    "afterPack": "scripts/after-pack.js"
+  },
+  "author": "kiwiman0706-beep",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kiwiman0706-beep/Theta.Mensetsu.Hatch.git"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "theta-mensetsu-hatch-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Theta Mensetsu Hatch in the browser (PWA): the shared UI and the desktop backend over IndexedDB and Google APIs.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "node build.js",
+    "test": "NODE_PATH=./node_modules node --test test/*.test.js",
+    "e2e": "node test/e2e.cjs"
+  },
+  "devDependencies": {
+    "buffer": "6.0.3",
+    "esbuild": "0.24.2",
+    "js-md5": "0.8.3",
+    "js-sha256": "0.11.0",
+    "pdfjs-dist": "4.10.38",
+    "yaml": "2.6.1"
+  }
+}
