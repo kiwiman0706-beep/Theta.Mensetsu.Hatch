@@ -218,6 +218,24 @@ const model = require("../../lib/model");
       const r = cropped.rect;
       assert.ok(store.people().find((p) => p.name === "顔 写子").portrait, "portrait saved");
       assert.ok(r.x > 600 && r.x < 860 && r.y >= 0 && r.y < 200 && r.width > 50 && r.width < 300, "frame lands near the top right: " + JSON.stringify(r));
+      // With a photo, tapping it opens the photo sheet (cut again, cut by hand, remove).
+      await page.waitForTimeout(300);
+      await page.getByLabel("顔写真").first().click();
+      await page.getByRole("button", { name: /顔写真を外す/ }).waitFor();
+      await page.getByLabel("閉じる").click();
+      // 📌 memos on the card, and ticking applicants in the list.
+      const face = store.people().find((p) => p.name === "顔 写子");
+      store.put({ ...face, notes: [{ id: "n1", time: Date.now(), text: "夜勤可・車通勤", pin: true }, { id: "n2", time: Date.now(), text: "見せないメモ" }] });
+      await page.goto(`http://127.0.0.1:${port}/?token=${token}`);
+      await page.getByRole("tab", { name: "リスト" }).click();
+      await page.locator(".pinnotes", { hasText: "夜勤可・車通勤" }).waitFor();
+      assert.strictEqual(await page.locator(".pinnotes", { hasText: "見せないメモ" }).count(), 0);
+      await page.getByRole("button", { name: /^選ぶ$/ }).click();
+      await page.locator(".person", { hasText: "顔 写子" }).click();
+      await page.locator(".person", { hasText: "佐藤 一郎" }).click();
+      await page.getByText("2人を選択").waitFor();
+      await page.screenshot({ path: path.join(shots, "pick.png") });
+      assert.ok(await page.getByRole("button", { name: /AIでやり直す/ }).isEnabled());
       assert.deepStrictEqual(errors, []);
       await page.close();
     }

@@ -124,7 +124,14 @@ let state = { people: [], categories: [], model: "gemini-2.5-flash", format: "le
   query = "",
   filter = "active",
   catFilter = "",
-  sort = "applied",
+  sort = (() => {
+    try {
+      return localStorage.getItem("mensetsu.sort") || "applied";
+    } catch {
+      return "applied";
+    }
+  })(),
+  picking = null, // the applicants ticked in the list (a Set), or null when not choosing
   layout = "cards",
   mode = "file",
   draft = null,
@@ -216,6 +223,10 @@ function go(r) {
   window.scrollTo(0, 0);
 }
 function openPerson(id, ev) {
+  if (picking && route === "home") {
+    picking.has(id) ? picking.delete(id) : picking.add(id);
+    return updateList();
+  }
   // Ctrl / Shift / middle click on the PC: the applicant in a window of its own.
   if (ev && can("windows") && (ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.button === 1)) {
     ev.preventDefault();
@@ -330,11 +341,26 @@ function listContent() {
       .join("")}</tbody></table></div><p class="caption">表は横にスクロールできます。CSVはメニューから書き出せます（今の絞り込みのままでも書き出せます）。</p>`;
   return personCards(a);
 }
+// Memos marked 📌 are shown on the card in the list too (newest first).
+function pinned(p) {
+  const list = (p.notes || []).filter((n) => n.pin).sort((a, b) => b.time - a.time);
+  return list.length ? `<div class="pinnotes">${list.slice(0, 3).map((n) => `<p>📌 ${esc(n.text)}</p>`).join("")}${list.length > 3 ? `<small>ほか ${list.length - 3}件</small>` : ""}</div>` : "";
+}
+function pickMode() {
+  picking = picking ? null : new Set();
+  render();
+}
+function pickBar(a) {
+  if (!picking) return "";
+  for (const id of [...picking]) if (!state.people.some((p) => p.id === id)) picking.delete(id);
+  const all = a.length && a.every((p) => picking.has(p.id));
+  return `<div class="pickbar"><b>${picking.size}人を選択</b><button class="noflex" onclick="${all ? "picking.clear()" : `filtered().forEach((p)=>picking.add(p.id))`};updateList()">${all ? "選択を外す" : "表示中を全部選ぶ"}</button><button class="primary noflex" ${picking.size ? "" : "disabled"} onclick="retrySheet([...picking])">${icon("spark")}AIでやり直す</button></div>`;
+}
 function personCards(a) {
-  return `<div class="cardlist">${a
+  return `${pickBar(a)}<div class="cardlist">${a
     .map(
       (p) =>
-        `<button class="person" onclick="openPerson('${p.id}',event)" onauxclick="openPerson('${p.id}',event)">${avatar(p)}<div class="personbody"><h3 class="ell">${esc(title(p))}${age(p.birthDate) !== "" ? ` <small>${age(p.birthDate)}歳</small>` : ""}</h3><div class="company ell">${esc(job(p))}${p.position ? " ・ " + esc(p.position) : ""}</div><div class="personmeta">${stageBadge(p)}${p.queue ? `<span class="badge new">処理中</span>` : p.status === "confirmed" && !p.suggestion ? "" : `<span class="badge review">${p.suggestion ? "要確認" : status(p)}</span>`}${p.interview ? `<span class="when">${icon("cal")}${esc(when(p.interview))}</span>` : p.appliedDate ? `<span>応募 ${esc(when(p.appliedDate))}</span>` : ""}${+p.rating ? `<span class="stars">${stars(p.rating)}</span>` : ""}${p.agency ? `<span>紹介：${esc(p.agency)}</span>` : ""}${(p.checklist || []).length ? `<span class="${p.checklist.every((c) => c.done) ? "" : "when"}">${icon("check")}手続き ${p.checklist.filter((c) => c.done).length}/${p.checklist.length}</span>` : ""}${p.contactId ? `<span title="Google連絡先に登録済み">${icon("user")}</span>` : ""}${p.notes?.length ? `<span>メモ ${p.notes.length}</span>` : ""}</div></div><span class="chevron">${icon("next")}</span></button>`,
+        `<button class="person ${picking ? "picking" : ""} ${picking && picking.has(p.id) ? "picked" : ""}" onclick="openPerson('${p.id}',event)" onauxclick="openPerson('${p.id}',event)">${picking ? `<span class="pickmark">${picking.has(p.id) ? icon("check") : ""}</span>` : ""}${avatar(p)}<div class="personbody"><h3 class="ell">${esc(title(p))}${age(p.birthDate) !== "" ? ` <small>${age(p.birthDate)}歳</small>` : ""}</h3><div class="company ell">${esc(job(p))}${p.position ? " ・ " + esc(p.position) : ""}</div><div class="personmeta">${stageBadge(p)}${p.queue ? `<span class="badge new">処理中</span>` : p.status === "confirmed" && !p.suggestion ? "" : `<span class="badge review">${p.suggestion ? "要確認" : status(p)}</span>`}${p.interview ? `<span class="when">${icon("cal")}${esc(when(p.interview))}</span>` : p.appliedDate ? `<span>応募 ${esc(when(p.appliedDate))}</span>` : ""}${+p.rating ? `<span class="stars">${stars(p.rating)}</span>` : ""}${p.agency ? `<span>紹介：${esc(p.agency)}</span>` : ""}${(p.checklist || []).length ? `<span class="${p.checklist.every((c) => c.done) ? "" : "when"}">${icon("check")}手続き ${p.checklist.filter((c) => c.done).length}/${p.checklist.length}</span>` : ""}${p.contactId ? `<span title="Google連絡先に登録済み">${icon("user")}</span>` : ""}${p.notes?.length ? `<span>メモ ${p.notes.length}</span>` : ""}</div>${pinned(p)}</div><span class="chevron">${icon("next")}</span></button>`,
     )
     .join("")}</div>`;
 }
@@ -416,7 +442,7 @@ function home() {
           ["category", "職種別", "grid"],
         ]
           .map(([v, l, ic]) => `<button role="tab" aria-selected="${layout === v}" class="${layout === v ? "active" : ""}" onclick="setLayout('${v}')">${icon(ic)}${l}</button>`)
-          .join("")}</div>${layout === "calendar" ? "" : `<div class="chips">${chips}</div>`}<div class="sectionline"><small id="count">${(layout === "calendar" ? filtered(true) : filtered()).length} 人</small>${catFilter ? `<button class="chip active" onclick="catFilter='';render()">${esc(catFilter === "-" ? "職種未設定" : catFilter)} ✕</button>` : ""}<select aria-label="並べ替え" onchange="sort=this.value;updateList()">${[
+          .join("")}</div>${layout === "calendar" ? "" : `<div class="chips">${chips}</div>`}<div class="sectionline"><small id="count">${(layout === "calendar" ? filtered(true) : filtered()).length} 人</small>${catFilter ? `<button class="chip active" onclick="catFilter='';render()">${esc(catFilter === "-" ? "職種未設定" : catFilter)} ✕</button>` : ""}<button class="chip ${picking ? "active" : ""}" onclick="pickMode()">${icon("check")}${picking ? "選ぶのをやめる" : "選ぶ"}</button><select aria-label="並べ替え" onchange="sort=this.value;try{localStorage.setItem('mensetsu.sort',sort)}catch{};updateList()">${[
           ["applied", "応募日が新しい順"],
           ["interview", "面接日時が近い順"],
           ["rating", "評価が高い順"],
@@ -907,7 +933,7 @@ function detail() {
   const a = age(p.birthDate);
   const docs = p.documents || [];
   document.title = title(p) + " - Theta Mensetsu Hatch";
-  return `${backbar("", `${can("windows") && !solo ? `<button onclick="openWindow('${p.id}')" aria-label="別ウインドウで開く" title="別ウインドウで開く">${icon("share")}</button>` : ""}<button onclick="beginEdit()" aria-label="編集">${icon("edit")}</button><button onclick="detailMenu()" aria-label="その他の操作">${icon("more")}</button>`)}<div class="detailsHead"><button class="facebtn" onclick="${p.portrait ? `viewFile('${esc(p.portrait)}')` : "assetSheet()"}" aria-label="顔写真">${avatar(p, "big")}</button><div class="content"><small>${esc(p.kana)}</small><h1>${esc(title(p))}</h1><p class="muted">${[a !== "" ? a + "歳" : "", p.gender, p.birthDate ? "生年月日 " + when(p.birthDate, true).replace(/\(.\)/, "") : ""].filter(Boolean).map(esc).join(" ・ ")}</p><p><b>${esc(job(p))}</b>${p.position ? " ・ " + esc(p.position) : ""}${p.employment ? " ・ " + esc(p.employment) : ""}</p>${p.agency ? `<span class="badge st-scheduled">紹介：${esc(p.agency)}</span> ` : ""}${p.status === "confirmed" && !p.suggestion ? "" : `<span class="badge review">${p.suggestion ? "読み取り結果あり" : status(p)}</span>`}</div></div>
+  return `${backbar("", `${can("windows") && !solo ? `<button onclick="openWindow('${p.id}')" aria-label="別ウインドウで開く" title="別ウインドウで開く">${icon("share")}</button>` : ""}<button onclick="beginEdit()" aria-label="編集">${icon("edit")}</button><button onclick="detailMenu()" aria-label="その他の操作">${icon("more")}</button>`)}<div class="detailsHead"><button class="facebtn" onclick="assetSheet()" aria-label="顔写真">${avatar(p, "big")}</button><div class="content"><small>${esc(p.kana)}</small><h1>${esc(title(p))}</h1><p class="muted">${[a !== "" ? a + "歳" : "", p.gender, p.birthDate ? "生年月日 " + when(p.birthDate, true).replace(/\(.\)/, "") : ""].filter(Boolean).map(esc).join(" ・ ")}</p><p><b>${esc(job(p))}</b>${p.position ? " ・ " + esc(p.position) : ""}${p.employment ? " ・ " + esc(p.employment) : ""}</p>${p.agency ? `<span class="badge st-scheduled">紹介：${esc(p.agency)}</span> ` : ""}${p.status === "confirmed" && !p.suggestion ? "" : `<span class="badge review">${p.suggestion ? "読み取り結果あり" : status(p)}</span>`}</div></div>
 <div class="selection panel"><label><span class="label">選考状況</span><select onchange="setField('stage',this.value)">${STAGES.map(([v, l]) => `<option value="${v}" ${p.stage === v ? "selected" : ""}>${l}</option>`).join("")}</select></label><label><span class="label">面接日時</span><input type="datetime-local" value="${esc(toLocalInput(p.interview))}" onchange="setField('interview',fromLocalInput(this.value))"></label><div><span class="label">評価</span><div class="rate" role="radiogroup" aria-label="評価">${[1, 2, 3, 4, 5].map((n) => `<button class="${+p.rating >= n ? "on" : ""}" onclick="setField('rating','${+p.rating === n ? "" : n}')" aria-label="${n}">${icon("star")}</button>`).join("")}</div></div></div>
 <div class="gap">${primaryAction(p)}</div>${p.warnings ? `<div class="tip warning gap">読み取り時の注意：${esc(p.warnings)}</div>` : ""}${p.queueError ? `<div class="tip warning gap">処理できませんでした：${esc(p.queueError)}</div>` : ""}<div class="gap">${contactBox(p)}</div>
 <div class="detailcols"><div>${section("連絡先", ["mobile", "phone", "email", "postal", "address"], p)}${commuteBox(p)}${decisionBox(p)}${checkBox(p)}${section("応募", ["appliedDate", "source", "agency", "agencyContact", "agencyFee", "interviewers", "startDate", "tags"], p)}${section("学歴・職歴・資格", ["education", "career", "licenses"], p, true)}${section("志望動機など", ["motivation", "selfPr", "wishes"], p, true)}${
@@ -927,7 +953,7 @@ function timeline(p) {
   return [...p.notes]
     .map((n, i) => ({ n, i }))
     .sort((a, b) => b.n.time - a.n.time)
-    .map(({ n, i }) => `<div class="note"><div class="notehead"><small>${esc(date(n.time))}</small><div><button onclick="editNote(${i})" aria-label="メモ編集">${icon("edit")}</button><button onclick="removeItem('notes',${i})" aria-label="メモ削除">${icon("trash")}</button></div></div><p class="notebody">${esc(n.text)}</p></div>`)
+    .map(({ n, i }) => `<div class="note"><div class="notehead"><small>${esc(date(n.time))}</small><div><button class="${n.pin ? "pinon" : ""}" onclick="call('pinNote',{id:selected,noteId:'${esc(n.id)}',pin:${!n.pin}})" aria-label="${n.pin ? "一覧に表示しない" : "一覧にも表示"}" title="${n.pin ? "一覧に表示しない" : "一覧にも表示（📌）"}">📌</button><button onclick="editNote(${i})" aria-label="メモ編集">${icon("edit")}</button><button onclick="removeItem('notes',${i})" aria-label="メモ削除">${icon("trash")}</button></div></div><p class="notebody">${n.pin ? "📌 " : ""}${esc(n.text)}</p></div>`)
     .join("");
 }
 // The same look as menuRow, for information only (not tappable).
@@ -951,6 +977,7 @@ function detailMenu() {
       menuRow("edit", "手書きメモ", "ペン・指で書く（筆圧対応）", "closeModal();sketchOpen('')"),
       can("windows") ? menuRow("share", "別ウインドウで開く", "一覧で Ctrl＋クリックでも開けます", "closeModal();openWindow(selected)") : "",
       p.pages.length && can("gemini") ? menuRow("spark", "Geminiで読み取り直す", "結果は保存前に確認できます", "closeModal();reread()") : "",
+      (p.pages.length || hasPdf(p)) && can("gemini") ? menuRow("spark", "モデルを変えてAIでやり直す", "履歴書の読み取り・顔写真の切り出し", "retrySheet([selected])") : "",
       menuRow("user", "顔写真", p.portrait ? (p.portraitSource ? "履歴書から切り出し済み" : "手動で登録済み") : "履歴書から切り出す・画像を選ぶ", "assetSheet()"),
       menuRow("download", "書類を添付", "職務経歴書・免許証の写し・紹介状など", "attachSheet()"),
       can("contacts") && p.contactId ? menuRow("close", "Google連絡先から削除", "応募者の記録は残ります", "closeModal();unlinkContact()") : "",
@@ -980,12 +1007,21 @@ function attachGo(how) {
 function assetSheet() {
   const p = getPerson();
   modal(
-    `<h2>${icon("user")} 顔写真</h2><p class="caption">一覧のサムネイルと、Google連絡先の写真に使います。履歴書の1ページ目に貼られた写真を自動で切り出します。</p><div class="assetrow"><div class="assetbox">${p.portrait ? `<img src="${img(p.portrait)}" alt="顔写真">` : `<div class="placeholder">${icon("user")}</div>`}<small>${p.portrait ? (p.portraitSource ? "履歴書から切り出し" : "手動で登録") : "未登録"}</small></div></div><div class="mlist gap">${[
+    `<h2>${icon("user")} 顔写真</h2><p class="caption">一覧のサムネイルと、Google連絡先の写真に使います。履歴書の1ページ目に貼られた写真を自動で切り出します。</p><div class="assetrow"><div class="assetbox">${p.portrait ? `<img src="${img(p.portrait)}" alt="顔写真" onclick="viewFile('${esc(p.portrait)}')">` : `<div class="placeholder">${icon("user")}</div>`}<small>${p.portrait ? (p.portraitSource ? "履歴書から切り出し" : "手動で登録") : "未登録"}</small></div></div><div class="mlist gap">${[
       p.pages.length || hasPdf(p) ? menuRow("image", "履歴書から自分で切り出す", "枠に写真が収まるように、ページを動かして拡大します", "cropSheet(0)") : "",
       (p.pages.length || hasPdf(p)) && can("gemini") ? menuRow("spark", "履歴書から切り出し直す", "Geminiが写真の位置を探します", "closeModal();call('photoOne',{id:selected})") : "",
       menuRow("image", "画像を選んで登録", "", "closeModal();call('asset',{id:selected})"),
       p.portrait ? menuRow("trash", "顔写真を外す", "", "if(confirm('顔写真を外しますか？')){closeModal();call('clearAsset',{id:selected})}", "dangerrow") : "",
     ].join("")}</div>`,
+  );
+}
+// ---- Again with Gemini, maybe with another model (one applicant, or those ticked in the list) ----
+let modelList = [];
+function retrySheet(ids) {
+  if (!state.keySet) return report("メニュー →「Gemini APIキー・モデル」で、APIキーを登録してください。");
+  window.retryIds = ids;
+  modal(
+    `<h2>${icon("spark")} AIでやり直す</h2><p class="caption">${ids.length === 1 ? esc(title(state.people.find((p) => p.id === ids[0]) || {})) : ids.length + "人"}について、Gemini にもう一度頼みます（バックグラウンド）。</p><label class="label">やり直すこと</label><select id="retryWhat"><option value="read">履歴書の読み取り（結果は「要確認」になり、確認してから保存）</option><option value="photo">顔写真の切り出し（手で登録した顔写真はそのまま）</option></select><label class="label">モデル</label><input id="retryModel" list="retryModels" value="${esc(state.model)}" autocomplete="off"><datalist id="retryModels">${modelList.map((m) => `<option value="${esc(m)}">`).join("")}</datalist><p class="caption">ふだんのモデルは ${esc(state.model)}。ここで変えても、ふだんのモデルは変わりません。<button class="link" onclick="call('models',{for:'retry'})">使えるモデルの一覧を取得</button></p><button class="primary full gap" onclick="const q={ids:window.retryIds,what:$('retryWhat').value,model:$('retryModel').value};closeModal();picking=null;call('retryAI',q)">やり直す</button>`,
   );
 }
 // ---- Cutting the face photo out by hand ------------------------------------------------------
@@ -1716,6 +1752,11 @@ window.onNative = ({ type, data }) => {
     const message = `${data.ids.length}人・${data.pages}ページを保存しました。` + (data.skipped ? `\n取り込み済みのため飛ばしたファイル：${data.skipped}` : "");
     if (data.errors.length) report(message + "\n\n取り込めなかったファイル：\n" + data.errors.join("\n"));
     else toast(message);
+  } else if (type === "models" && data.for === "retry") {
+    modelList = data.list.filter((m) => !/image|tts|audio|live|embedding|transcribe|robotics|computer-use|banana/.test(m));
+    const dl = $("retryModels");
+    if (dl) dl.innerHTML = modelList.map((m) => `<option value="${esc(m)}">`).join("");
+    toast(`${modelList.length}個のモデルを、モデルの欄の候補に入れました`);
   } else if (type === "models") {
     modal(
       `<h2>利用できるモデル</h2><p class="caption">履歴書の読み取りには画像入力に対応したFlash系のモデルを選んでください。</p><select id="chooseModel">${data.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join("")}</select><button class="primary full gap" onclick="settingsDraft.model=$('chooseModel').value;closeModal();render();toast('モデルを選びました。保存を押してください')">このモデルを選ぶ</button>`,

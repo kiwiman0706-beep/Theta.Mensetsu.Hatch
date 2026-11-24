@@ -269,3 +269,35 @@ test("face photo cut by hand, and from an applicant who has only the PDF", async
   assert.strictEqual(q.pages[0].source, "r.pdf");
   assert.strictEqual(String(await t.store.readMedia(q.pages[0].file)), "PDF");
 });
+
+test("AI again with another model (many at once), and memos pinned to the list", async () => {
+  const t = setup((prompt) => (/顔写真/.test(prompt) && /box/.test(prompt) ? { box: "100,700,300,950" } : { ...RESUME, name: "読み直し 花子" }));
+  t.setKey("k");
+  const model = require("../lib/model");
+  await t.store.writeMedia("p1.jpg", Buffer.from("PAGE1"));
+  t.store.put({ ...model.empty(), id: "a1", name: "保存済み 花子", status: "confirmed", pages: [{ file: "p1.jpg", name: "1" }], portrait: "x.jpg", portraitSource: "resume" });
+  t.store.put({ ...model.empty(), id: "a2", name: "手動 太郎", status: "confirmed", pages: [{ file: "p1.jpg", name: "1" }], portrait: "y.jpg" });
+  await t.backend.dispatch("retryAI", { ids: ["a1", "a2"], what: "read", model: "gemini-3.8-flash" });
+  await t.settle();
+  const a1 = t.store.person("a1");
+  assert.strictEqual(a1.name, "保存済み 花子", "saved data stays until checked");
+  assert.strictEqual(a1.status, "review");
+  assert.strictEqual(a1.suggestion.name, "読み直し 花子");
+  assert.ok(!a1.queueModel && !a1.queue);
+  const used = t.calls.map((c) => String(c.url));
+  assert.ok(used.length >= 2 && used.every((u) => /gemini-3\.8-flash/.test(u)), "the chosen model: " + used.join(" "));
+  await t.backend.dispatch("retryAI", { ids: ["a1", "a2"], what: "photo" });
+  await t.settle();
+  assert.notStrictEqual(t.store.person("a1").portrait, "x.jpg", "the automatic photo is cut again");
+  assert.strictEqual(t.store.person("a2").portrait, "y.jpg", "a photo set by hand stays");
+  // 📌 memos
+  await t.backend.dispatch("note", { id: "a1", text: "夜勤可、車通勤" });
+  const n = t.store.person("a1").notes[0];
+  await t.backend.dispatch("pinNote", { id: "a1", noteId: n.id, pin: true });
+  const codec = require("../lib/vault-codec");
+  const back = codec.parse(codec.render(t.store.person("a1")), "x.md");
+  assert.strictEqual(back.notes[0].pin, true);
+  assert.strictEqual(back.notes[0].text, "夜勤可、車通勤");
+  await t.backend.dispatch("pinNote", { id: "a1", noteId: n.id, pin: false });
+  assert.ok(!t.store.person("a1").notes[0].pin);
+});

@@ -66,7 +66,7 @@ const ORDER = [
 ];
 const OWN = new Set(ORDER);
 // Fields that only make sense on one device (queues, a pending Gemini result): never in the vault.
-const LOCAL = ["queue", "queueError", "suggestion", "contactPending", "photoTried", "contactDuplicate"];
+const LOCAL = ["queue", "queueModel", "queueError", "suggestion", "contactPending", "photoTried", "contactDuplicate"];
 
 const STAGES = {
   received: "書類受付",
@@ -211,7 +211,7 @@ function render(p) {
   b += H_NOTES + "\n";
   for (const n of [...(p.notes || [])].sort((a, c) => (a.time || 0) - (c.time || 0))) {
     const lines = String(n.text || "").split("\n");
-    b += "- " + noteTime(n.time || 0) + " " + lines[0];
+    b += "- " + noteTime(n.time || 0) + " " + (n.pin ? PIN + " " : "") + lines[0];
     for (const l of lines.slice(1)) b += "\n  " + l;
     b += " ^" + blockId(n.id) + "\n";
   }
@@ -273,6 +273,7 @@ const str = (v) => {
   if (Array.isArray(v)) return v.filter((x) => x != null && String(x).trim()).map((x) => String(x).trim()).join("\n");
   return String(v).trim();
 };
+const PIN = "📌";
 const NOTE = /^[-*]\s+(\d{4}-\d{2}-\d{2})(?:[ T](\d{1,2}:\d{2}))?\s*(.*)$/;
 const BLOCK = /\s\^([A-Za-z0-9-]+)\s*$/;
 const CHECK = /^[-*]\s+\[([ xX])\]\s*(.*)$/;
@@ -415,6 +416,11 @@ function parse(md, allowNewId = false) {
         const hm = m[2] == null ? "00:00" : m[2].length === 4 ? "0" + m[2] : m[2];
         const time = ms(m[1] + "T" + hm, now);
         last = { id: bid != null ? bid : nameUUID(String(time) + t), time, text: t.trim() };
+        // "📌" first: the memo is shown in the list too.
+        if (last.text.startsWith(PIN)) {
+          last.text = last.text.slice(PIN.length).trim();
+          last.pin = true;
+        }
         notes.push(last);
       } else if (last && line.startsWith("  ")) {
         let t = line.slice(2);

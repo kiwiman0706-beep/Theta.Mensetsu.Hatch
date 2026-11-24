@@ -203,6 +203,34 @@ class Backend {
         p.notes.push({ id: crypto.randomUUID(), time: Date.now(), text: String(q.text) });
         return st.put(p);
       }
+      case "pinNote": {
+        const p = st.person(id);
+        for (const n of p.notes) if (n.id === q.noteId) q.pin ? (n.pin = true) : delete n.pin;
+        return st.put(p);
+      }
+      case "retryAI": {
+        // Again with Gemini, for one or many, optionally with another model. A résumé read again
+        // comes back as a suggestion to check (what is saved stays until it is confirmed).
+        this.needKey();
+        const what = q.what === "photo" ? "photo" : "read";
+        const useModel = String(q.model || "").trim();
+        const ids = (Array.isArray(q.ids) ? q.ids : [id]).filter((i) => {
+          const p = st.person(i);
+          return p && ((p.pages || []).length || (what === "photo" && model.hasPdf(p))) && !(what === "photo" && p.portrait && !p.portraitSource);
+        });
+        if (!ids.length) return this.toast(what === "photo" ? "やり直せる人がいません（履歴書のページが無いか、顔写真を手で登録済み）" : "やり直せる人がいません（履歴書のページがありません）");
+        for (const i of ids) {
+          const p = st.person(i);
+          p.queue = what === "photo" ? "photo" : p.status === "new" ? "recognize" : "reread";
+          if (useModel) p.queueModel = useModel;
+          else delete p.queueModel;
+          delete p.queueError;
+          if (what === "photo") delete p.photoTried;
+          st.put(p, false);
+        }
+        this.work();
+        return this.toast(`${ids.length}人の${what === "photo" ? "顔写真の切り出し" : "履歴書の読み取り"}をやり直します（${useModel || this.cfg().model}、バックグラウンド）`);
+      }
       case "editNote": {
         const p = st.person(id);
         for (const n of p.notes) if (n.id === q.noteId) n.text = String(q.text);
@@ -412,7 +440,7 @@ class Backend {
         return this.saveSettings(q);
       case "models":
         this.needKey();
-        return this.event("models", await gemini.models(this.secrets.get(), this.fetch));
+        return this.event("models", q.for ? { for: q.for, list: await gemini.models(this.secrets.get(), this.fetch) } : await gemini.models(this.secrets.get(), this.fetch));
       case "export": {
         const stamp = model.today(Date.now()).replace(/-/g, "");
         const list = q.ids ? st.people().filter((p) => q.ids.includes(p.id)) : st.people();
@@ -829,21 +857,22 @@ class Backend {
     for (const id of ids) {
       const p = this.store.person(id);
       p.queue = step;
+      delete p.queueModel;
       delete p.queueError;
       this.store.put(p, false);
     }
     this.work();
   }
 
-  cfg() {
+  cfg(model) {
     const s = this.settings;
-    return { key: this.secrets.get(), model: s.get("model", "gemini-2.5-flash"), format: s.get("format", "legacy") };
+    return { key: this.secrets.get(), model: model || s.get("model", "gemini-2.5-flash"), format: s.get("format", "legacy") };
   }
 
   async read(p) {
     const images = [];
     for (const pg of p.pages.slice(0, 20)) images.push(await this.svc.imaging.toJpeg(await this.store.readMedia(pg.file), 2000));
-    return gemini.generate(this.cfg(), "resume", images, this.fetch, { categories: this.categories().join("、") });
+    return gemini.generate(this.cfg(p.queueModel), "resume", images, this.fetch, { categories: this.categories().join("、") });
   }
 
   async work() {
@@ -856,14 +885,23 @@ class Backend {
         const next = this.store.people().find((p) => p.queue);
         if (!next) break;
         const left = this.store.people().filter((p) => p.queue).length;
-        this.processing = `${next.queue === "photo" ? "顔写真を切り出し中" : "履歴書を読み取り中"}（残り${left}件）`;
+        this.processing = `${next.queue === "photo" ? "顔写真を切り出し中" : "履歴書を読み取り中"}（残り${left}件${next.queueModel ? "・" + next.queueModel : ""}）`;
         this.refresh();
         try {
-          if (next.queue === "photo") await this.cutPhoto(next.id, null);
-          else {
+          if (next.queue === "photo") await this.cutPhoto(next.id, null, next.queueModel);
+          else if (next.queue === "reread") {
+            const r = await this.read(next);
+            const p = this.store.person(next.id);
+            delete p.queue;
+            delete p.queueModel;
+            p.suggestion = r;
+            p.status = "review";
+            this.store.put(p, false);
+          } else {
             const r = await this.read(next);
             const p = model.applyResult(this.store.person(next.id), r);
             delete p.queue;
+            delete p.queueModel;
             this.store.put(p);
             await this.cutPhoto(next.id, r.photoBox).catch(() => {});
             await this.afterRecognized(this.store.person(next.id)).catch((e) => errors.push(`${p.name || "応募者"}（連絡先）: ${e.message}`));
@@ -881,6 +919,7 @@ class Backend {
           try {
             const p = this.store.person(next.id);
             delete p.queue;
+            delete p.queueModel;
             p.queueError = m;
             this.store.put(p, false);
           } catch {}
@@ -922,18 +961,19 @@ class Backend {
     return pages.length;
   }
 
-  async cutPhoto(id, box) {
+  async cutPhoto(id, box, useModel) {
     const st = this.store, im = this.svc.imaging;
     const p = st.person(id);
     const ask = box === null;
     if (ask) {
       delete p.queue;
+      delete p.queueModel;
       st.put(p, false);
     }
     if (!(p.pages || []).length && model.hasPdf(p)) await this.pdfToPages(id);
     if (!(st.person(id).pages || []).length || (p.portrait && !p.portraitSource)) return false;
     const front = await im.toJpeg(await st.readMedia(st.person(id).pages[0].file), 2000);
-    if (ask) box = (await gemini.generate(this.cfg(), "photo", [front], this.fetch)).box;
+    if (ask) box = (await gemini.generate(this.cfg(useModel), "photo", [front], this.fetch)).box;
     const jpeg = box ? await im.crop(front, (w, h) => model.photoRect(box, w, h), 600, model.trimPhotoRect) : null;
     const x = st.person(id);
     x.photoTried = true;
