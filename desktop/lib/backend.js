@@ -458,6 +458,33 @@ class Backend {
         st.put(p);
         return this.contactChanged(id, true);
       }
+      case "pdfPages": {
+        const n = await this.pdfToPages(id);
+        if (!n) throw new Error("ページの画像にできる PDF がありません");
+        this.toast(`PDF から ${n} ページの画像を作りました`);
+        if (q.then === "crop") this.event("crop", id);
+        return;
+      }
+      case "cropPortrait": {
+        // A frame placed by hand on a page: x, y, w, h are fractions of the page image.
+        const p = st.person(id);
+        const pg = (p.pages || [])[Number(q.page) || 0];
+        if (!pg) throw new Error("ページが見つかりません");
+        const f = (v) => Math.max(0, Math.min(1, Number(v) || 0));
+        const [fx, fy] = [f(q.x), f(q.y)];
+        const [fw, fh] = [Math.min(f(q.w), 1 - fx), Math.min(f(q.h), 1 - fy)];
+        const jpeg = await this.svc.imaging.crop(await st.readMedia(pg.file), (w, h) => ({ x: Math.floor(fx * w), y: Math.floor(fy * h), width: Math.floor(fw * w), height: Math.floor(fh * h) }), 600);
+        if (!jpeg) throw new Error("範囲が小さすぎます。枠に合わせて写真を大きく映してください");
+        const name = crypto.randomUUID() + ".jpg";
+        await st.writeMedia(name, jpeg);
+        const x = st.person(id);
+        x.portrait = name;
+        x.portraitSource = "resume";
+        x.photoTried = true;
+        st.put(x);
+        this.toast("顔写真にしました");
+        return this.contactChanged(id, true);
+      }
       case "clearAsset": {
         const p = st.person(id);
         delete p.portrait;
@@ -874,6 +901,27 @@ class Backend {
 
   // The ID photo on the first page becomes the thumbnail (and the contact's picture). The box
   // comes with the reading; "photo" asks Gemini again. A picture chosen by hand stays.
+  // The page images of the PDF originals, for an applicant who has only the PDF.
+  async pdfToPages(id) {
+    const st = this.store;
+    const p = st.person(id);
+    const pages = [];
+    for (const s of (p.sources || []).filter((s) => /\.pdf$/i.test(s.file))) {
+      const jpegs = await this.svc.imaging.pdfPages(await st.readMedia(s.file), 2400);
+      const base = crypto.randomUUID();
+      for (let n = 0; n < jpegs.length; n++) {
+        const name = `${base}-${n + 1}.jpg`;
+        await st.writeMedia(name, jpegs[n]);
+        pages.push({ file: name, name: `${s.name || s.file} / ${n + 1}`, source: s.file });
+      }
+    }
+    if (!pages.length) return 0;
+    const x = st.person(id);
+    x.pages = [...(x.pages || []), ...pages];
+    st.put(x);
+    return pages.length;
+  }
+
   async cutPhoto(id, box) {
     const st = this.store, im = this.svc.imaging;
     const p = st.person(id);
@@ -882,8 +930,9 @@ class Backend {
       delete p.queue;
       st.put(p, false);
     }
-    if (!(p.pages || []).length || (p.portrait && !p.portraitSource)) return false;
-    const front = await im.toJpeg(await st.readMedia(p.pages[0].file), 2000);
+    if (!(p.pages || []).length && model.hasPdf(p)) await this.pdfToPages(id);
+    if (!(st.person(id).pages || []).length || (p.portrait && !p.portraitSource)) return false;
+    const front = await im.toJpeg(await st.readMedia(st.person(id).pages[0].file), 2000);
     if (ask) box = (await gemini.generate(this.cfg(), "photo", [front], this.fetch)).box;
     const jpeg = box ? await im.crop(front, (w, h) => model.photoRect(box, w, h), 600, model.trimPhotoRect) : null;
     const x = st.person(id);

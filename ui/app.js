@@ -981,11 +981,97 @@ function assetSheet() {
   const p = getPerson();
   modal(
     `<h2>${icon("user")} 顔写真</h2><p class="caption">一覧のサムネイルと、Google連絡先の写真に使います。履歴書の1ページ目に貼られた写真を自動で切り出します。</p><div class="assetrow"><div class="assetbox">${p.portrait ? `<img src="${img(p.portrait)}" alt="顔写真">` : `<div class="placeholder">${icon("user")}</div>`}<small>${p.portrait ? (p.portraitSource ? "履歴書から切り出し" : "手動で登録") : "未登録"}</small></div></div><div class="mlist gap">${[
-      p.pages.length && can("gemini") ? menuRow("spark", "履歴書から切り出し直す", "Geminiが写真の位置を探します", "closeModal();call('photoOne',{id:selected})") : "",
+      p.pages.length || hasPdf(p) ? menuRow("image", "履歴書から自分で切り出す", "枠に写真が収まるように、ページを動かして拡大します", "cropSheet(0)") : "",
+      (p.pages.length || hasPdf(p)) && can("gemini") ? menuRow("spark", "履歴書から切り出し直す", "Geminiが写真の位置を探します", "closeModal();call('photoOne',{id:selected})") : "",
       menuRow("image", "画像を選んで登録", "", "closeModal();call('asset',{id:selected})"),
       p.portrait ? menuRow("trash", "顔写真を外す", "", "if(confirm('顔写真を外しますか？')){closeModal();call('clearAsset',{id:selected})}", "dangerrow") : "",
     ].join("")}</div>`,
   );
+}
+// ---- Cutting the face photo out by hand ------------------------------------------------------
+// The frame stays in the middle; the page moves under it (drag, pinch, wheel, the buttons).
+const hasPdf = (p) => (p.sources || []).some((s) => /\.pdf$/i.test(s.file));
+let cr = null;
+function cropSheet(page) {
+  const p = getPerson();
+  if (!p.pages.length) {
+    if (!hasPdf(p)) return toast("履歴書のページがありません");
+    closeModal();
+    return call("pdfPages", { id: selected, then: "crop" });
+  }
+  page = Math.min(page, p.pages.length - 1);
+  modal(
+    `<div class="cropper" id="cropbox"><img id="cropimg" src="${img(p.pages[page].file)}" alt="${page + 1}ページ" draggable="false"><div class="cropframe" id="cropframe"></div></div><p class="crophint">写真が枠にぴったり入るように、ページを動かして拡大してください（2本指・ホイールで拡大）</p><div class="viewtools">${
+      p.pages.length > 1 ? p.pages.map((_, i) => `<button class="${i === page ? "on" : ""}" onclick="cropSheet(${i})">${i + 1}ページ</button>`).join("") : ""
+    }<button onclick="cropZoom(1/1.25)" aria-label="縮小">－</button><button onclick="cropZoom(1.25)" aria-label="拡大">＋</button><button class="primary" onclick="cropSave()">${icon("check")}顔写真にする</button></div>`,
+    true,
+  );
+  const box = $("cropbox"), im = $("cropimg");
+  cr = { page, s: 1, tx: 0, ty: 0, pts: new Map() };
+  const start = () => {
+    const W = box.clientWidth, H = box.clientHeight;
+    const fw = Math.min(W * 0.5, H * 0.6 * 0.75), fh = (fw * 4) / 3;
+    Object.assign($("cropframe").style, { width: fw + "px", height: fh + "px", left: (W - fw) / 2 + "px", top: (H - fh) / 2 + "px" });
+    cr.nw = im.naturalWidth;
+    cr.nh = im.naturalHeight;
+    // Japanese résumés: the photo is at the top right of the page (of the left page on a spread).
+    const wide = cr.nw > cr.nh;
+    cr.s = fw / ((wide ? 0.085 : 0.17) * cr.nw);
+    cr.tx = W / 2 - (wide ? 0.4 : 0.82) * cr.nw * cr.s;
+    cr.ty = H / 2 - (wide ? 0.2 : 0.13) * cr.nh * cr.s;
+    cropDraw();
+  };
+  if (im.complete && im.naturalWidth) start();
+  else im.onload = start;
+  box.onpointerdown = (e) => {
+    box.setPointerCapture(e.pointerId);
+    cr.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  };
+  box.onpointermove = (e) => {
+    const old = cr.pts.get(e.pointerId);
+    if (!old) return;
+    const pts = [...cr.pts.values()];
+    if (pts.length === 1) {
+      cr.tx += e.clientX - old.x;
+      cr.ty += e.clientY - old.y;
+    } else {
+      const other = [...cr.pts.entries()].find(([k]) => k !== e.pointerId)[1];
+      const d0 = Math.hypot(old.x - other.x, old.y - other.y), d1 = Math.hypot(e.clientX - other.x, e.clientY - other.y);
+      const r = box.getBoundingClientRect();
+      if (d0 > 0) cropZoom(d1 / d0, (e.clientX + other.x) / 2 - r.left, (e.clientY + other.y) / 2 - r.top);
+    }
+    cr.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    cropDraw();
+  };
+  box.onpointerup = box.onpointercancel = (e) => cr.pts.delete(e.pointerId);
+  box.onwheel = (e) => {
+    e.preventDefault();
+    const r = box.getBoundingClientRect();
+    cropZoom(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX - r.left, e.clientY - r.top);
+  };
+}
+function cropZoom(k, cx, cy) {
+  const box = $("cropbox");
+  if (!cr || !box) return;
+  if (cx === undefined) [cx, cy] = [box.clientWidth / 2, box.clientHeight / 2];
+  const s = Math.max(0.05, Math.min(cr.s * k, 20));
+  cr.tx = cx - ((cx - cr.tx) * s) / cr.s;
+  cr.ty = cy - ((cy - cr.ty) * s) / cr.s;
+  cr.s = s;
+  cropDraw();
+}
+function cropDraw() {
+  const im = $("cropimg");
+  if (im) im.style.transform = `translate(${cr.tx}px,${cr.ty}px) scale(${cr.s})`;
+}
+function cropSave() {
+  const f = $("cropframe");
+  if (!cr || !cr.nw || !f) return;
+  const x = (f.offsetLeft - cr.tx) / cr.s / cr.nw, y = (f.offsetTop - cr.ty) / cr.s / cr.nh;
+  const w = f.offsetWidth / cr.s / cr.nw, h = f.offsetHeight / cr.s / cr.nh;
+  const page = cr.page;
+  closeModal();
+  call("cropPortrait", { id: selected, page, x, y, w, h });
 }
 function date(t) {
   return new Date(t).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -1602,7 +1688,9 @@ window.onNative = ({ type, data }) => {
     } else if (state.people.some((p) => p.id === data)) openPerson(data);
     else pendingOpen = data;
   } else if (type === "review") pendingEdit = data;
-  else if (type === "importPreview") importPreviewSheet(data);
+  else if (type === "crop") {
+    if (getPerson() && selected === data) cropSheet(0);
+  } else if (type === "importPreview") importPreviewSheet(data);
   else if (type === "imported-archive") importedSheet(data);
   else if (type === "queued") {
     if (route !== "edit") route = "home";

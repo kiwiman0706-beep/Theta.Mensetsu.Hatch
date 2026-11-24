@@ -178,10 +178,14 @@ function trimPhotoRect(px, w, h, r) {
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
 
+// Only the PDF original is kept (e.g. read in from a zip without page images): the pages can be
+// made from it.
+const hasPdf = (p) => (p.sources || []).some((s) => /\.pdf$/i.test(s.file));
+
 // Applicants with a résumé but no face photo yet (e.g. read in from a zip already transcribed):
 // the photo can still be cut from page 1. Unread ones get theirs when Gemini reads them.
 function photoPicks(people) {
-  return people.filter((p) => (p.pages || []).length && !p.portrait && !p.photoTried && !p.queue && p.status !== "new").map((p) => p.id);
+  return people.filter((p) => ((p.pages || []).length || hasPdf(p)) && !p.portrait && !p.photoTried && !p.queue && p.status !== "new").map((p) => p.id);
 }
 
 // ---- sync ----------------------------------------------------------------------------------
@@ -258,4 +262,5 @@ function media(p) {
   return out;
 }
 
-module.exports = { photoPicks, CHECKLIST, checkProgress, addChecklist, CATEGORIES, HEAD, empty, edit, merge, applyResult, today, age, csv, photoRect, trimPhotoRect, syncMerge, media };
+module.exports = { photoPicks,
+  hasPdf, CHECKLIST, checkProgress, addChecklist, CATEGORIES, HEAD, empty, edit, merge, applyResult, today, age, csv, photoRect, trimPhotoRect, syncMerge, media };

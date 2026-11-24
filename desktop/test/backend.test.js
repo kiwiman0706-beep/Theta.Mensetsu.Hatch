@@ -251,3 +251,21 @@ test("imported applicants already read (no Gemini reading) get their face photo 
   assert.match(String(await t.store.readMedia(p.portrait)), /^face-of-PAGE1/);
   assert.strictEqual(t.backend.state().photoMissing, 0);
 });
+
+test("face photo cut by hand, and from an applicant who has only the PDF", async () => {
+  const t = await setup();
+  const model = require("../lib/model");
+  await t.store.writeMedia("p1.jpg", Buffer.from("PAGE1"));
+  await t.store.writeMedia("r.pdf", Buffer.from("PDF"));
+  t.store.put({ ...model.empty(), id: "m1", name: "手動 花子", status: "confirmed", pages: [{ file: "p1.jpg", name: "1" }] });
+  t.store.put({ ...model.empty(), id: "m2", name: "原本 太郎", status: "confirmed", sources: [{ file: "r.pdf", name: "履歴書.pdf", mime: "application/pdf" }] });
+  await t.backend.dispatch("cropPortrait", { id: "m1", page: 0, x: 0.7, y: 0.05, w: 0.2, h: 0.2 });
+  const p = t.store.person("m1");
+  assert.match(String(await t.store.readMedia(p.portrait)), /^face-of-PAGE1/);
+  assert.strictEqual(t.backend.state().photoMissing, 1, "the PDF-only one can have its photo cut too");
+  await t.backend.dispatch("pdfPages", { id: "m2" });
+  const q = t.store.person("m2");
+  assert.strictEqual(q.pages.length, 2);
+  assert.strictEqual(q.pages[0].source, "r.pdf");
+  assert.strictEqual(String(await t.store.readMedia(q.pages[0].file)), "PDF");
+});

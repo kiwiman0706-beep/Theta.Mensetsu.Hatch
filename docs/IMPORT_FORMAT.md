@@ -134,7 +134,7 @@ portrait_source: resume
 | `created`・`updated` | 作った日時・更新日時 | ISO 8601（例 `2026-11-24T10:00:00+09:00`）。省略時は読み込んだ時刻。**同じ id を読み込み直すときは `updated` を新しくする**（古いと飛ばされる） |
 | `pages` | 履歴書などのページの画像 | リスト。`Mensetsu/_files/<ファイル名>`（前の部分は無くてもよい） |
 | `originals` | 元のファイル（PDF など） | リスト。`- file: Mensetsu/_files/x.pdf`（`name:` に元の名前を書けば画面に出る） |
-| `portrait` | 顔写真（一覧のサムネイル） | `Mensetsu/_files/<ファイル名>`。無いときは、`status: new` の人は Gemini の読み取りのときに、読み取り済みの人は読み込んだあとの「顔写真の無い n 人の顔写真を切り出す」（メニューの「顔写真をまとめて切り出す」も同じ）で、履歴書の 1 ページ目から切り出す。顔写真の画像が手元にあれば、ここに入れておけば Gemini を使わずに済む |
+| `portrait` | 顔写真（一覧のサムネイル） | `Mensetsu/_files/<ファイル名>`。無いときは、`status: new` の人は Gemini の読み取りのときに、読み取り済みの人は読み込んだあとの「顔写真の無い n 人の顔写真を切り出す」（メニューの「顔写真をまとめて切り出す」も同じ）で、履歴書の 1 ページ目から切り出す。`pages` が無く `originals` に PDF だけある人は、そのときに PDF をページの画像にする。ずれたときは応募者の画面の「履歴書から自分で切り出す」で直せる。顔写真の画像が手元にあれば、ここに入れておけば Gemini を使わずに済む |
 | `documents` | 履歴書以外の書類 | `- {id: d1, date: 2026-11-20, kind: 職務経歴書, title: 職務経歴書, files: [Mensetsu/_files/d1.jpg], originals: [Mensetsu/_files/d1.pdf]}` |
 
 アプリが書き出す zip には、このほか `recordings`（録音と文字起こし）・`sketches`（手書き）・`evaluations`（職員評価）・`google_contact` などが入ります。詳しくは [`MENSETSU_VAULT.md`](MENSETSU_VAULT.md)。

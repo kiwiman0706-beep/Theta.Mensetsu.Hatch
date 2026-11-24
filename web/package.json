@@ -1,6 +1,6 @@
 {
   "name": "theta-mensetsu-hatch-web",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "description": "Theta Mensetsu Hatch in the browser (PWA): the shared UI and the desktop backend over IndexedDB and Google APIs.",
   "license": "UNLICENSED",

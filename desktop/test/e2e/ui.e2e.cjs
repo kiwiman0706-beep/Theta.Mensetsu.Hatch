@@ -23,13 +23,13 @@ const model = require("../../lib/model");
   for (const [name, category, stage, interview, rating] of seed)
     store.put({ ...model.empty(), name, kana: "てすと", category, stage, interview, rating, status: "confirmed", birthDate: "1990-05-01", mobile: "090-0000-0000", licenses: "2012-04 看護師免許\n2015-03 認定看護師", career: "2012-04 ○○病院 入職", address: "東京都中野区1-1" });
   const values = {};
-  const saved = {};
+  const saved = {}, cropped = {};
   const backend = new Backend({
     store,
     settings: { get: (k, d) => (k in values ? values[k] : d), set: (o) => Object.assign(values, o) },
     secrets: { get: () => "", set: () => {} },
     services: {
-      imaging: { toJpeg: async (b) => b, pdfPages: async (b) => [b] },
+      imaging: { toJpeg: async (b) => b, pdfPages: async (b) => [b], crop: async (b, rectOf) => ((cropped.rect = rectOf(1000, 1400)), Buffer.from(b)) },
       openFiles: async (single, action) => (action === "zip" && saved.zip ? [{ name: "export.zip", read: async () => saved.zip }] : []),
       saveBytes: async (name, bytes) => ((saved.zip = Buffer.from(bytes)), name),
     },
@@ -179,6 +179,45 @@ const model = require("../../lib/model");
       await page.getByRole("button", { name: /^読み込む$/ }).click();
       await page.getByText("読み込みました").waitFor();
       assert.ok(store.people().some((p) => p.name === "佐藤 一郎"), "brought back from the zip");
+      assert.deepStrictEqual(errors, []);
+      await page.close();
+    }
+    // The face photo cut out by hand: the page moves under the frame.
+    {
+      const page = await browser.newPage({ viewport: { width: 1100, height: 860 } });
+      const errors = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      await page.goto(`http://127.0.0.1:${port}/?token=${token}`);
+      const jpeg = await page.evaluate(() => {
+        const c = document.createElement("canvas");
+        c.width = 1000;
+        c.height = 1400;
+        const g = c.getContext("2d");
+        g.fillStyle = "#fff";
+        g.fillRect(0, 0, 1000, 1400);
+        g.fillStyle = "#88a";
+        g.fillRect(760, 90, 150, 200); // the photo
+        return c.toDataURL("image/jpeg").split(",")[1];
+      });
+      await store.writeMedia("page-face.jpg", Buffer.from(jpeg, "base64"));
+      store.put({ ...model.empty(), name: "顔 写子", category: "看護師", status: "confirmed", pages: [{ file: "page-face.jpg", name: "1" }] });
+      await page.locator(".person", { hasText: "顔 写子" }).click();
+      await page.getByLabel("顔写真").click();
+      await page.getByRole("button", { name: /履歴書から自分で切り出す/ }).click();
+      await page.locator("#cropframe").waitFor();
+      await page.waitForTimeout(200);
+      const b = await page.locator("#cropbox").boundingBox();
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(b.x + b.width / 2 + 10, b.y + b.height / 2 + 5, { steps: 3 });
+      await page.mouse.up();
+      await page.mouse.wheel(0, -100);
+      await page.screenshot({ path: path.join(shots, "crop.png") });
+      await page.getByRole("button", { name: /顔写真にする/ }).click();
+      for (let i = 0; i < 100 && !store.people().find((p) => p.name === "顔 写子").portrait; i++) await page.waitForTimeout(50);
+      const r = cropped.rect;
+      assert.ok(store.people().find((p) => p.name === "顔 写子").portrait, "portrait saved");
+      assert.ok(r.x > 600 && r.x < 860 && r.y >= 0 && r.y < 200 && r.width > 50 && r.width < 300, "frame lands near the top right: " + JSON.stringify(r));
       assert.deepStrictEqual(errors, []);
       await page.close();
     }

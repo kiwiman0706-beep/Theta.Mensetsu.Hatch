@@ -811,6 +811,40 @@ tbody tr:active {
   float: none;
   margin: 12px 0;
 }
+.cropper {
+  position: relative;
+  height: 68vh;
+  overflow: hidden;
+  touch-action: none;
+  background: #000;
+  border-radius: 12px;
+  cursor: grab;
+  user-select: none;
+}
+.viewer .cropper img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.cropframe {
+  position: absolute;
+  border: 2px solid #fff;
+  border-radius: 6px;
+  box-shadow: 0 0 0 9999px #000a;
+  pointer-events: none;
+}
+.crophint {
+  font-size: 12px;
+  margin: 8px 0;
+}
+.viewtools .on {
+  outline: 2px solid #fff;
+}
 #busy {
   position: fixed;
   inset: 0;
