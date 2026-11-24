@@ -844,8 +844,9 @@ class Backend {
           done++;
         } catch (e) {
           const m = String(e.message);
-          if (/HTTP (429|401|403)|APIキー/.test(m)) {
-            errors.push(m + "\n残りは後で「未読み取りをまとめて読み取る」から再開できます");
+          if (/HTTP (402|429|401|403)|APIキー/.test(m)) {
+            if (/HTTP 402/.test(m)) errors.push("Gemini の前払いのクレジットが残っていません。Google AI Studio（ai.studio）の「Billing」でクレジットを足してください。");
+            errors.push(m + (next.queue === "photo" ? "\n残りは後でメニューの「顔写真をまとめて切り出す」から再開できます" : "\n残りは後で「未読み取りをまとめて読み取る」から再開できます"));
             break;
           }
           failed++;

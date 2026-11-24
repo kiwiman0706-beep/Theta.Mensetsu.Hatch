@@ -174,7 +174,7 @@ const services = (store) => ({
     hub = JSON.parse(A.hub());
   } catch {}
   const shared = hub.info || {};
-  if (shared["gemini.model"] && !settings.get("model", "")) settings.set({ model: shared["gemini.model"] });
+  if (shared["gemini.model"] && !/image|tts|audio|live/.test(shared["gemini.model"]) && !settings.get("model", "")) settings.set({ model: shared["gemini.model"] });
   const HUB_NAMES = { "app.thetahatch.home": "Home Hatch", "app.thetahatch.kidshome": "KidsHome Hatch" };
   backend = new Backend({
     store,

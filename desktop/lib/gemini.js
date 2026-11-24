@@ -31,7 +31,7 @@ async function models(key, fetchImpl) {
   for (let i = 0; i < 10; i++) {
     const r = await request(key, "models?pageSize=100" + (token ? "&pageToken=" + encodeURIComponent(token) : ""), null, fetchImpl);
     for (const m of r.models || [])
-      if (String(m.name).includes("gemini") && (m.supportedGenerationMethods || []).includes("generateContent")) out.push(m.name.replace("models/", ""));
+      if (String(m.name).includes("gemini") && !/image|tts|embedding|audio|live/.test(m.name) && (m.supportedGenerationMethods || []).includes("generateContent")) out.push(m.name.replace("models/", ""));
     token = r.nextPageToken || "";
     if (!token) break;
   }
