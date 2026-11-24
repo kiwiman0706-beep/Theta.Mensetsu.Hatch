@@ -11,7 +11,7 @@ on:
   push:
     tags: ["v*"]
     branches: [main]
-    paths: ["docs/releases/**"]
+    paths: ["docs/releases/**", ".github/workflows/release.yml"]
   workflow_dispatch:
 
 permissions:
@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
@@ -44,7 +44,7 @@ jobs:
 
   test:
     needs: check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -66,7 +66,7 @@ jobs:
 
   android:
     needs: [check, test]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -154,7 +154,7 @@ jobs:
 
   release:
     needs: [check, android, windows, mac]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
