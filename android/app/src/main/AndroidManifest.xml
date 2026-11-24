@@ -3,11 +3,17 @@
   <uses-permission android:name="android.permission.CAMERA" />
   <uses-permission android:name="android.permission.RECORD_AUDIO" />
   <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+  <!-- シリーズのハブ（Home・KidsHome）の共通設定を読む（同じ署名鍵のアプリだけ） -->
+  <uses-permission android:name="app.thetahatch.permission.SHARE" />
   <uses-feature android:name="android.hardware.camera" android:required="false" />
   <uses-feature android:name="android.hardware.microphone" android:required="false" />
   <queries>
+    <!-- 更新と共通設定のハブ -->
+    <package android:name="app.thetahatch.home" />
+    <package android:name="app.thetahatch.kidshome" />
     <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent>
     <intent><action android:name="android.intent.action.VIEW" /><data android:mimeType="application/pdf" /></intent>
+    <intent><action android:name="app.thetahatch.action.UPDATE" /></intent>
   </queries>
   <application
       android:theme="@style/AppTheme"
@@ -33,6 +39,7 @@
         <category android:name="android.intent.category.DEFAULT" />
         <data android:mimeType="application/pdf" />
         <data android:mimeType="image/*" />
+        <data android:mimeType="application/zip" />
       </intent-filter>
     </activity>
     <provider

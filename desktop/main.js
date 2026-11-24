@@ -269,10 +269,10 @@ app.whenReady().then(async () => {
   const port0 = settings.get("port", 47860);
   const services = {
     imaging: null,
-    openFiles: async (single) => {
+    openFiles: async (single, action) => {
       const r = await dialog.showOpenDialog(win || undefined, {
         properties: single ? ["openFile"] : ["openFile", "multiSelections"],
-        filters: [{ name: "画像・PDF", extensions: ["jpg", "jpeg", "png", "pdf", "webp", "gif", "bmp"] }],
+        filters: action === "zip" ? [{ name: "書き出したファイル（zip）", extensions: ["zip"] }] : [{ name: "画像・PDF", extensions: ["jpg", "jpeg", "png", "pdf", "webp", "gif", "bmp"] }],
       });
       return r.canceled ? [] : r.filePaths;
     },
@@ -284,6 +284,12 @@ app.whenReady().then(async () => {
       const r = await dialog.showSaveDialog(win || undefined, { defaultPath: path.join(app.getPath("downloads"), name) });
       if (r.canceled || !r.filePath) return "";
       fs.writeFileSync(r.filePath, text);
+      return r.filePath;
+    },
+    saveBytes: async (name, bytes) => {
+      const r = await dialog.showSaveDialog(win || undefined, { defaultPath: path.join(app.getPath("documents"), name), filters: [{ name: "zip", extensions: ["zip"] }] });
+      if (r.canceled || !r.filePath) return "";
+      fs.writeFileSync(r.filePath, Buffer.from(bytes));
       return r.filePath;
     },
     openExternal: (u) => shell.openExternal(u),

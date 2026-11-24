@@ -1,4 +1,4 @@
-package jp.yaegaki.theta.mensetsu;
+package app.thetahatch.mensetsu;
 
 import android.content.*;
 import android.security.keystore.*;

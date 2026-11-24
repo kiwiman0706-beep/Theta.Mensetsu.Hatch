@@ -16,7 +16,13 @@ const media = path.join(tmp, "media"), incoming = path.join(tmp, "incoming");
 fs.mkdirSync(media);
 fs.mkdirSync(incoming);
 fs.copyFileSync(path.join(__dirname, "resume.jpg"), path.join(incoming, "scan1.jpg"));
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".png": "image/png", ".jpg": "image/jpeg", ".json": "application/json" };
+// An export from another device: one applicant with a résumé page.
+{
+  const { zipSync, strToU8 } = require(path.join(__dirname, "..", "..", "desktop", "node_modules", "fflate"));
+  const md = "---\nid: from-pc-1\nname: 共有 花子\ncategory: 看護師\npages:\n- Mensetsu/_files/pc1.jpg\n---\n";
+  fs.writeFileSync(path.join(incoming, "export.zip"), zipSync({ "Mensetsu/Applicants/共有 花子.md": strToU8(md), "Mensetsu/_files/pc1.jpg": fs.readFileSync(path.join(__dirname, "resume.jpg")) }));
+}
+const TYPES = { ".zip": "application/zip", ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".png": "image/png", ".jpg": "image/jpeg", ".json": "application/json" };
 
 const srv = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
@@ -50,7 +56,10 @@ const FAKE = () => {
   };
   window.__calls = [];
   window.AndroidNative = {
-    info: () => JSON.stringify({ version: "0.2.0", package: "jp.yaegaki.theta.mensetsu", sha1: "AF:16:1A:37" }),
+    info: () => JSON.stringify({ version: "1.0.0", package: "app.thetahatch.mensetsu", sha1: "AF:16:1A:37" }),
+    hub: () => JSON.stringify({ hub: "app.thetahatch.home", info: { "gemini.model": "gemini-2.5-flash", "google.account": "hr@example.com" }, hasGeminiKey: true }),
+    useHubGeminiKey: () => ((window.__key = "HUBKEY"), true),
+    hubWrite: (json) => (window.__hubWrites = [...(window.__hubWrites || []), JSON.parse(json)]),
     secretGet: () => window.__key || "",
     secretSet: (v) => (window.__key = v),
     hasMedia: (name) => sync("GET", "/bridge/has?name=" + encodeURIComponent(name)) === "1",
@@ -105,14 +114,27 @@ const FAKE = () => {
     await page.getByText("ログイン中：hr@example.com").waitFor();
     await page.getByLabel("閉じる").click();
     await page.getByRole("button", { name: /^Google連携の初期設定ガイド/ }).click();
-    await page.getByText("jp.yaegaki.theta.mensetsu").waitFor();
+    await page.getByText("app.thetahatch.mensetsu").waitFor();
     await page.getByText("AF:16:1A:37").waitFor();
     await page.getByLabel("閉じる").click();
-    // The Gemini key goes to the phone's keystore through the bridge.
+    // Updates go to the hub.
+    await page.getByRole("button", { name: /^更新を確認/ }).click();
+    for (let i = 0; i < 50 && !(await page.evaluate(() => window.__calls.some(([m]) => m === "update"))); i++) await page.waitForTimeout(50);
+    assert.ok(await page.evaluate(() => window.__calls.some(([m]) => m === "update")), "asks the hub to update");
+    // The hub's Gemini key, taken when the user says so; then one typed in goes to the keystore.
     await page.getByRole("button", { name: /^Gemini APIキー/ }).click();
+    await page.getByRole("button", { name: /Home Hatch の Gemini APIキーを使う/ }).click();
+    assert.strictEqual(await page.evaluate(() => window.__key), "HUBKEY");
     await page.locator("input[type=password]").fill("AIzaTEST");
     await page.getByRole("button", { name: "保存", exact: true }).click();
     assert.strictEqual(await page.evaluate(() => window.__key), "AIzaTEST");
+    assert.ok((await page.evaluate(() => window.__hubWrites || [])).some((w) => w["gemini.model"]), "the model goes back to the hub");
+    // A zip shared to the app (export from a PC): checked first, then read in.
+    await page.evaluate(() => window.AndroidShared([{ name: "mensetsu.zip", path: "incoming/export.zip" }]));
+    await page.getByText("読み込む前の確認").waitFor();
+    await page.getByRole("button", { name: /^読み込む$/ }).click();
+    await page.getByText("読み込みました").waitFor();
+    await page.getByText(/新しく加えた 1人/).waitFor();
     await page.screenshot({ path: path.join(tmp, "android-menu.png") });
     assert.deepStrictEqual(errors, []);
     console.log("PASS", tmp);

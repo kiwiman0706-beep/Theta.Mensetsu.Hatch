@@ -1,4 +1,4 @@
-package jp.yaegaki.theta.mensetsu;
+package app.thetahatch.mensetsu;
 
 import android.Manifest;
 import android.accounts.Account;
@@ -131,7 +131,10 @@ public class MainActivity extends ComponentActivity {
         if (fileCallback != null) fileCallback.onReceiveValue(null);
         fileCallback = cb;
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
-        i.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {"application/pdf", "image/*"});
+        // The page asks for résumés (PDF, pictures) or for a zip to read back.
+        boolean zip = false;
+        for (String t : params.getAcceptTypes()) if (t != null && t.contains("zip")) zip = true;
+        i.putExtra(Intent.EXTRA_MIME_TYPES, zip ? new String[] {"application/zip", "application/x-zip-compressed", "application/octet-stream"} : new String[] {"application/pdf", "image/*"});
         i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
         try {
           startActivityForResult(i, FILES);
@@ -495,8 +498,104 @@ public class MainActivity extends ComponentActivity {
     }
   }
 
+  // ---- the series' hubs (Theta.Hatch.Series spec/THETA_SHARED_SETTINGS.md §4.0) ----------------
+  static final String[] HUBS = {"app.thetahatch.home", "app.thetahatch.kidshome"};
+  static final String RELEASES = "https://github.com/kiwiman0706-beep/Theta.Mensetsu.Hatch/releases/latest";
+
+  String installedHub() {
+    for (String h : HUBS) {
+      try {
+        getPackageManager().getPackageInfo(h, 0);
+        return h;
+      } catch (PackageManager.NameNotFoundException ignored) {
+      }
+    }
+    return "";
+  }
+
+  // Updates go through the hub (this app may not install anything); without one, the Releases page.
+  void askUpdate() {
+    String hub = installedHub();
+    if (!hub.isEmpty()) {
+      Intent i = new Intent("app.thetahatch.action.UPDATE").setPackage(hub).putExtra("packageName", getPackageName()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+      try {
+        startActivity(i);
+        return;
+      } catch (Exception ignored) {
+      }
+    }
+    openUrl(RELEASES);
+  }
+
+  // The hub's shared settings: key → value (ui.skin, gemini.model, google.account…).
+  JSONObject hubInfo() {
+    JSONObject out = new JSONObject();
+    String hub = installedHub();
+    if (hub.isEmpty()) return out;
+    try (Cursor c = getContentResolver().query(Uri.parse("content://" + hub + ".theta/info"), null, null, null, null)) {
+      JSONObject info = new JSONObject();
+      if (c != null) {
+        int k = c.getColumnIndex("key"), v = c.getColumnIndex("value");
+        while (c.moveToNext()) if (k >= 0 && v >= 0) info.put(c.getString(k), c.getString(v));
+      }
+      out.put("hub", hub).put("info", info);
+      // Whether the hub holds a Gemini key (read only when the user says so).
+      try (Cursor s = getContentResolver().query(Uri.parse("content://" + hub + ".theta/secret/gemini.key"), null, null, null, null)) {
+        out.put("hasGeminiKey", s != null && s.moveToFirst() && s.getString(s.getColumnIndex("value")) != null && !s.getString(s.getColumnIndex("value")).isEmpty());
+      }
+    } catch (Exception e) {
+      // An older hub, or one signed with another key: nothing to share.
+    }
+    return out;
+  }
+
+  String hubSecret(String key) {
+    String hub = installedHub();
+    if (hub.isEmpty()) return "";
+    try (Cursor c = getContentResolver().query(Uri.parse("content://" + hub + ".theta/secret/" + key), null, null, null, null)) {
+      if (c != null && c.moveToFirst()) return c.getString(c.getColumnIndex("value"));
+    } catch (Exception ignored) {
+    }
+    return "";
+  }
+
   // ---- the bridge -------------------------------------------------------------------------
   class Bridge {
+    @JavascriptInterface
+    public String hub() {
+      return hubInfo().toString();
+    }
+
+    // Copies the hub's Gemini key into this app's keystore (after the user chose to).
+    @JavascriptInterface
+    public boolean useHubGeminiKey() {
+      String k = hubSecret("gemini.key");
+      if (k == null || k.isEmpty()) return false;
+      try {
+        SecretBox.save(MainActivity.this, k);
+        return true;
+      } catch (Exception e) {
+        return false;
+      }
+    }
+
+    // Writes the settings this app shares back to the hub (keys like gemini.model, google.account).
+    @JavascriptInterface
+    public void hubWrite(String json) {
+      String hub = installedHub();
+      if (hub.isEmpty()) return;
+      try {
+        JSONObject o = new JSONObject(json);
+        android.content.ContentValues v = new android.content.ContentValues();
+        for (java.util.Iterator<String> it = o.keys(); it.hasNext(); ) {
+          String k = it.next();
+          v.put(k, o.optString(k));
+        }
+        getContentResolver().update(Uri.parse("content://" + hub + ".theta/info"), v, null, null);
+      } catch (Exception ignored) {
+      }
+    }
+
     @JavascriptInterface
     public String info() {
       try {
@@ -573,7 +672,7 @@ public class MainActivity extends ComponentActivity {
               break;
             case "saveFile": {
               saveId = id;
-              saveBytes = a.optString("text").getBytes("UTF-8");
+              saveBytes = a.has("b64") ? Base64.decode(a.optString("b64"), Base64.DEFAULT) : a.optString("text").getBytes("UTF-8");
               Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(a.optString("type", "text/csv")).putExtra(Intent.EXTRA_TITLE, a.optString("name"));
               startActivityForResult(i, SAVE);
               break;
@@ -596,6 +695,10 @@ public class MainActivity extends ComponentActivity {
               reply(id, new JSONObject());
               break;
             }
+            case "update":
+              askUpdate();
+              reply(id, new JSONObject());
+              break;
             case "copyText": {
               android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
               cm.setPrimaryClip(android.content.ClipData.newPlainText("text", a.optString("text")));

@@ -11,6 +11,7 @@ const gemini = require("./gemini");
 const contacts = require("./contacts");
 const V = require("./vault-codec");
 const { DriveVault } = require("./drive-vault");
+const archive = require("./archive");
 
 // Features the PC offers; the UI hides the rest (docs/THETA_HATCH_SPEC.md §4.1).
 const CAPS = ["pick", "folder", "gemini", "vault", "export", "attach", "contacts", "sync", "google", "camera", "record", "windows", "commute"];
@@ -282,6 +283,44 @@ class Backend {
         p.checklist = (p.checklist || []).filter((x) => x.id !== q.cid);
         return st.put(p);
       }
+      case "exportAll": {
+        // Everyone (or the given ids) in one zip: notes + résumé images, PDFs, recordings, memos.
+        const list = q.ids ? st.people().filter((p) => q.ids.includes(p.id)) : st.people();
+        if (!list.length) throw new Error("書き出す応募者がいません");
+        this.event("busy", `${list.length}人分を書き出しています`);
+        let r;
+        try {
+          r = await archive.build(list, (m) => st.readMedia(m), { recordings: q.recordings !== false, settings: this.appSettings(), version: (this.info() || {}).version });
+        } finally {
+          this.event("busy", "");
+        }
+        const name = `mensetsu-${model.today(Date.now()).replace(/-/g, "")}-${list.length}人.zip`;
+        const saved = await (this.svc.saveBytes || this.svc.saveFile)(name, r.bytes, "application/zip");
+        if (!saved) return;
+        return this.event("report", `${r.count}人・ファイル ${r.media}個を書き出しました（${(r.bytes.length / 1048576).toFixed(1)}MB）。` + (r.missing.length ? `\n見つからなかったファイル（書き出していません）：\n${r.missing.join("\n")}` : ""));
+      }
+      case "importArchive": {
+        const files = await this.svc.openFiles(true, "zip");
+        if (files && files.length) await this.previewArchive(files[0]);
+        return;
+      }
+      case "importConfirm": {
+        const parsed = this.pendingImport;
+        this.pendingImport = null;
+        if (!parsed) throw new Error("読み込むファイルを選び直してください");
+        this.event("busy", "読み込んでいます");
+        let r;
+        try {
+          r = await archive.apply(st, parsed);
+          if (q.settings && parsed.settings) this.saveSettings({ ...parsed.settings, quiet: true });
+        } finally {
+          this.event("busy", "");
+        }
+        return this.event("imported-archive", { added: r.added, updated: r.updated, skipped: r.skipped, files: r.files, unread: r.unread, missing: r.missing, warnings: r.warnings, keySet: !!this.secrets.get() });
+      }
+      case "importCancel":
+        this.pendingImport = null;
+        return;
       case "evalSave": {
         // A staff evaluation after hiring (or any assessment worth keeping on file).
         const e = q.evaluation || {};
@@ -557,7 +596,39 @@ class Backend {
     if ("googleClientId" in q || "googleClientSecret" in q || "contactsSeparate" in q) this.resetGoogle();
     this.refresh();
     if ("syncMode" in q && set.syncMode === "drive" && this.gSync && this.gSync.signedIn()) this.scheduleSync(500);
-    return this.toast("設定を保存しました");
+    if (!q.quiet) this.toast("設定を保存しました");
+  }
+
+  // Reads a zip and shows what it holds before anything is changed (importConfirm adds it).
+  async previewArchive(file) {
+    this.event("busy", "ファイルを調べています");
+    let parsed;
+    try {
+      parsed = archive.read(typeof file === "string" ? require("fs").readFileSync(file) : await file.read());
+    } finally {
+      this.event("busy", "");
+    }
+    if (!parsed.people.length) throw new Error("応募者のノート（.md）が見つかりませんでした。\n" + parsed.warnings.slice(0, 10).join("\n"));
+    this.pendingImport = parsed;
+    let added = 0, newer = 0, older = 0;
+    for (const p of parsed.people) {
+      const cur = this.store.peek(p.id);
+      if (!cur) added++;
+      else if ((cur.updated || 0) < (p.updated || 0)) newer++;
+      else older++;
+    }
+    this.event("importPreview", { name: file.name || require("path").basename(String(file)), count: parsed.people.length, added, newer, older, files: parsed.media.size, warnings: parsed.warnings.slice(0, 30), settings: !!parsed.settings, from: parsed.manifest ? parsed.manifest.created || "" : "" });
+  }
+
+  // This app's own settings (not secrets): what the zip carries and a new device may take over.
+  appSettings() {
+    const s = this.settings;
+    const out = {};
+    for (const k of ["categories", "checklist", "workplace", "contactLabel", "contactLabelByCategory", "contactSuffix", "contactOrg", "contactPhoto", "autoContact", "autoRecognize", "model", "format"]) {
+      const v = s.get(k, undefined);
+      if (v !== undefined && v !== null) out[k] = Array.isArray(v) ? v.join("\n") : v;
+    }
+    return out;
   }
 
   needKey() {
@@ -611,6 +682,9 @@ class Backend {
   // interview recording). files: [{ name, read() }]
   async receive(files, q = {}) {
     if (q.as === "sketch") return this.saveSketch(files, q);
+    // A zip dropped on the window or shared to the app: the bulk import.
+    const zip = files.find((f) => /\.zip$/i.test(f.name));
+    if (zip) return this.previewArchive(zip);
     if (q.as !== "recording") return this.importFiles(files, q);
     const p = this.store.person(q.id);
     const bytes = await files[0].read();

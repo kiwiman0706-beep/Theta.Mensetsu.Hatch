@@ -23,7 +23,7 @@ function openFiles(single, action) {
   return new Promise((ok) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/*,application/pdf";
+    input.accept = action === "zip" ? ".zip,application/zip" : "image/*,application/pdf";
     if (action === "quickScan" || action === "scan") input.capture = "environment";
     else if (!single) input.multiple = true;
     input.style.display = "none";
@@ -58,6 +58,14 @@ function services(store) {
       a.download = name;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      return name;
+    },
+    saveBytes: async (name, bytes, type) => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([bytes], { type: type || "application/octet-stream" }));
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 120000);
       return name;
     },
     openExternal: (u) => window.open(u, "_blank", "noopener"),

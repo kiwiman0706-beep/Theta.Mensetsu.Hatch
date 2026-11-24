@@ -1,7 +1,7 @@
 {
   "name": "theta-mensetsu-hatch",
   "productName": "Theta Mensetsu Hatch",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "Theta Mensetsu Hatch for Windows / Mac — applicants from résumés, synced with Google Drive (Theta Vault).",
   "main": "main.js",
   "license": "UNLICENSED",
@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "electron-updater": "6.3.9",
+    "fflate": "0.8.2",
     "pdfjs-dist": "4.10.38",
     "yaml": "2.6.1"
   },
@@ -24,7 +25,7 @@
     "electron-builder": "25.1.8"
   },
   "build": {
-    "appId": "jp.yaegaki.theta.mensetsu",
+    "appId": "app.thetahatch.mensetsu",
     "productName": "Theta Mensetsu Hatch",
     "files": [
       "main.js",
@@ -94,7 +95,7 @@
     },
     "afterPack": "scripts/after-pack.js"
   },
-  "author": "kiwiman0706-beep",
+  "author": "Theta Hatch",
   "repository": {
     "type": "git",
     "url": "https://github.com/kiwiman0706-beep/Theta.Mensetsu.Hatch.git"

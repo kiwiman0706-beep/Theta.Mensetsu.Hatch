@@ -1,6 +1,6 @@
 # 応募者ノートの形式（Theta Vault / Obsidian）
 
-`Theta Vault/Mensetsu/Applicants/山田 花子（看護師）.md`。共通の決まりは [`THETA_VAULT_SPEC.md`](THETA_VAULT_SPEC.md)。
+`Theta Vault/Mensetsu/Applicants/山田 花子（看護師）.md`。共通の決まりは Theta.Hatch.Series の [`spec/THETA_VAULT_SPEC.md`](https://github.com/kiwiman0706-beep/Theta.Hatch.Series/blob/HEAD/spec/THETA_VAULT_SPEC.md)。
 
 ```markdown
 ---

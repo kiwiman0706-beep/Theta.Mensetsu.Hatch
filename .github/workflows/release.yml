@@ -2,8 +2,9 @@
 # docs/releases/v<version>.md and push to main (or push a tag like v0.1.0, or run it by hand).
 # → tests, then the Android APK, the Windows installer and the Mac builds, published together as
 # one GitHub Release with the tag v<version> (the PC app checks it for updates).
-# The APK is signed with the repository secrets ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD /
-# ANDROID_KEY_ALIAS when set, else with the development key in android/signing/.
+# The APK is signed with the series' shared key: the repository secrets ANDROID_KEYSTORE_B64 /
+# ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD (Theta.Hatch.Series secrets/).
+# Without them the release stops (an APK with another key could not be updated by the hubs).
 name: Release
 
 on:
@@ -75,25 +76,34 @@ jobs:
       - name: Page for the app (shared screen + backend)
         working-directory: web
         run: npm ci && npm run build:android
-      - name: APK
+      - name: APK (the series' shared key)
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION: ${{ needs.check.outputs.version }}
         working-directory: android
         run: |
-          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
-            export SIGNING_FILE="$RUNNER_TEMP/release.jks" SIGNING_PASSWORD="$KEYSTORE_PASSWORD" SIGNING_ALIAS="${KEY_ALIAS:-mensetsu}"
-          else
-            echo "::warning::ANDROID_KEYSTORE_B64 is not set: the APK is signed with the development key (android/signing/)"
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ]; then
+            echo "::error::The series' signing secrets (ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD) are not set"
+            exit 1
           fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          export SIGNING_FILE="$RUNNER_TEMP/release.jks"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" > /dev/null
           ./gradlew :app:assembleRelease --no-daemon
-          mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk "out/ThetaMensetsuHatch-${{ needs.check.outputs.version }}.apk"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs out/*.apk | grep SHA-1
           rm -f "$RUNNER_TEMP/release.jks"
+          mkdir -p out
+          APK="out/ThetaMensetsuHatch-$VERSION.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$APK"
+          # What the update hubs check (Theta.Hatch.Series spec §6.1): package, version, shared key.
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          "$BT/aapt2" dump badging "$APK" | head -1 | tee badging.txt
+          grep -q "name='app.thetahatch.mensetsu'" badging.txt
+          grep -q "versionName='$VERSION'" badging.txt
+          "$BT/apksigner" verify --print-certs "$APK" | tee certs.txt
+          grep -qi "SHA-256 digest: f47740d8549bc1c37feb00b18780d80b52758b60252ba0d2217d83ab3f012a23" certs.txt
       - uses: actions/upload-artifact@v4
         with:
           name: android

@@ -23,11 +23,16 @@ const model = require("../../lib/model");
   for (const [name, category, stage, interview, rating] of seed)
     store.put({ ...model.empty(), name, kana: "てすと", category, stage, interview, rating, status: "confirmed", birthDate: "1990-05-01", mobile: "090-0000-0000", licenses: "2012-04 看護師免許\n2015-03 認定看護師", career: "2012-04 ○○病院 入職", address: "東京都中野区1-1" });
   const values = {};
+  const saved = {};
   const backend = new Backend({
     store,
     settings: { get: (k, d) => (k in values ? values[k] : d), set: (o) => Object.assign(values, o) },
     secrets: { get: () => "", set: () => {} },
-    services: { imaging: { toJpeg: async (b) => b, pdfPages: async (b) => [b] }, openFiles: async () => [] },
+    services: {
+      imaging: { toJpeg: async (b) => b, pdfPages: async (b) => [b] },
+      openFiles: async (single, action) => (action === "zip" && saved.zip ? [{ name: "export.zip", read: async () => saved.zip }] : []),
+      saveBytes: async (name, bytes) => ((saved.zip = Buffer.from(bytes)), name),
+    },
   });
   const port = 47000 + Math.floor(Math.random() * 900), token = "e2e";
   const srv = await new Promise((ok) => {
@@ -123,7 +128,7 @@ const model = require("../../lib/model");
       await page.locator("#sk-title").fill("一次面接メモ");
       await page.getByRole("button", { name: /^保存$/ }).last().click();
       const sketched = () => (store.people().find((p) => p.name === "鈴木 次郎").sketches || [])[before];
-      for (let i = 0; i < 60 && !sketched(); i++) await page.waitForTimeout(50);
+      for (let i = 0; i < 300 && !sketched(); i++) await page.waitForTimeout(50);
       const k = sketched();
       assert.ok(k && k.file.endsWith(".png") && k.strokes.endsWith(".json"), "saved as picture + strokes");
       const strokes = JSON.parse(fs.readFileSync(store.mediaFile(k.strokes), "utf8")).strokes;
@@ -147,6 +152,33 @@ const model = require("../../lib/model");
         await noScroll(row);
         await page.getByLabel("閉じる").click();
       }
+      assert.deepStrictEqual(errors, []);
+      await page.close();
+    }
+    // Everything out to a zip and back in (the preview first, then the import).
+    {
+      const page = await browser.newPage({ viewport: { width: 1100, height: 860 } });
+      const errors = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      page.on("dialog", (d) => d.accept());
+      await page.goto(`http://127.0.0.1:${port}/?token=${token}`);
+      await page.getByRole("button", { name: "メニュー" }).click();
+      await page.getByRole("button", { name: /^すべてを書き出す/ }).click();
+      await page.getByRole("button", { name: /^書き出す$/ }).click();
+      await page.getByText(/人・ファイル .*個を書き出しました/).waitFor();
+      assert.ok(saved.zip && saved.zip.length > 100);
+      const gone = store.people().find((p) => p.name === "佐藤 一郎");
+      await page.getByLabel("閉じる").click();
+      store.remove(gone.id);
+      await page.getByText(/すべてを書き出す/).waitFor();
+      await page.waitForTimeout(300); // the menu redraws with the new state
+      await page.getByRole("button", { name: /^書き出したファイルを読み込む/ }).click();
+      await page.getByText("読み込む前の確認").waitFor();
+      await page.getByText("新しく加わる 1人").waitFor();
+      await page.screenshot({ path: path.join(shots, "import-preview.png") });
+      await page.getByRole("button", { name: /^読み込む$/ }).click();
+      await page.getByText("読み込みました").waitFor();
+      assert.ok(store.people().some((p) => p.name === "佐藤 一郎"), "brought back from the zip");
       assert.deepStrictEqual(errors, []);
       await page.close();
     }

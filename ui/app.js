@@ -930,6 +930,10 @@ function timeline(p) {
     .map(({ n, i }) => `<div class="note"><div class="notehead"><small>${esc(date(n.time))}</small><div><button onclick="editNote(${i})" aria-label="メモ編集">${icon("edit")}</button><button onclick="removeItem('notes',${i})" aria-label="メモ削除">${icon("trash")}</button></div></div><p class="notebody">${esc(n.text)}</p></div>`)
     .join("");
 }
+// The same look as menuRow, for information only (not tappable).
+function noteRow(ic, label, sub) {
+  return `<div class="mrow"><span class="mi">${icon(ic)}</span><span class="mt"><b>${label}</b>${sub ? `<small>${sub}</small>` : ""}</span></div>`;
+}
 function menuRow(ic, label, sub, onclick, cls = "") {
   return `<button class="mrow ${cls}" onclick="${onclick}"><span class="mi">${icon(ic)}</span><span class="mt"><b>${label}</b>${sub ? `<small>${sub}</small>` : ""}</span>${icon("next")}</button>`;
 }
@@ -1283,7 +1287,7 @@ const groupings = [
 function importSheet(action) {
   const cats = state.categories || [];
   modal(
-    `<h2>${icon("plus")} 履歴書を取り込む</h2><p class="caption">PDF・画像を選ぶと、Geminiが読み取って応募者を登録します（自動読み取りがオンのとき）。${state.platform === "desktop" ? "ファイルをこの画面にドラッグ＆ドロップしても取り込めます（1ファイル = 1人）。" : ""}</p><label class="label">職種（分かっていれば。空なら読み取りで判断）</label><select id="impcat"><option value="">（読み取りで判断）</option>${cats.map((c) => `<option>${esc(c)}</option>`).join("")}</select><label class="label">ページのまとめ方</label><div class="mlist">${groupings
+    `<h2>${icon("plus")} 履歴書を取り込む</h2><p class="caption">PDF・画像を選ぶと、Geminiが読み取って応募者を登録します（自動読み取りがオンのとき）。${state.platform === "desktop" ? "ファイルをこの画面にドラッグ＆ドロップしても取り込めます（1ファイル = 1人。書き出した zip を落とすと、まとめて読み込みます）。" : ""}</p><label class="label">職種（分かっていれば。空なら読み取りで判断）</label><select id="impcat"><option value="">（読み取りで判断）</option>${cats.map((c) => `<option>${esc(c)}</option>`).join("")}</select><label class="label">ページのまとめ方</label><div class="mlist">${groupings
       .map(([v, l, sub]) => menuRow(v === "file" ? "doc" : v === "all" ? "grid" : "list", l + (mode === v && v !== "file" ? "（前回）" : ""), sub, `mode='${v}';importGo('${action === "scan" ? "pick" : action}','${v}')`))
       .join("")}${action === "scan" ? menuRow("camera", state.platform === "android" ? "スキャン（書類を自動で切り抜き）" : "カメラで撮影", "紙の履歴書を1人分撮影（何枚でも）", "importGo('scan','all')") : ""}${can("camera") ? menuRow("camera", state.platform === "desktop" ? "PCのカメラで撮影" : "カメラで撮影（画面で確認しながら）", "紙の履歴書を1人分、何ページでも", "importCamera()") : ""}${
       can("folder") ? menuRow("folder", "フォルダから取り込む", "フォルダ内のPDF・画像を一括（1ファイル = 1人。取り込み済みは飛ばします）", "importGo('folder','file')") : ""
@@ -1451,11 +1455,37 @@ function menuPage() {
   ])}${only("export", section("書き出し", [
     menuRow("table", "一覧をCSVで書き出す", "Excelで開けるUTF-8 CSV（すべての応募者）", "call('export',{})"),
     menuRow("table", "今の絞り込みのままCSVで書き出す", esc((FILTERS.find((x) => x[0] === filter) || [])[1] || "") + (catFilter ? "・" + esc(catFilter) : "") + `（${filtered().length}人）`, "call('export',{ids:filtered().map(p=>p.id)})"),
-  ]))}<p class="footnote">Theta Mensetsu Hatch ${state.version ? esc(state.version) + " ・ " : ""}${state.platform === "android" ? "Android版<br>データはこのスマホに保存し、Googleドライブの Theta Vault と同期します。" : state.platform === "web" ? "ブラウザ版<br>データはこのブラウザに保存し、Googleドライブの Theta Vault と同期します。" : "PC版<br>データは Theta Vault フォルダ（Markdown＋画像）に保存されます。"}</p>`;
+  ]))}${section("まとめて書き出す・読み込む", [
+    menuRow("download", "すべてを書き出す（zip）", "応募者のノート＋履歴書の画像・PDF・顔写真・書類・録音・手書き。Obsidianでも開ける形", "exportSheet()"),
+    menuRow("plus", "書き出したファイルを読み込む", "zip（別の端末・別のところで作ったもの）。足すだけで、今のデータは消しません", "call('importArchive')"),
+  ])}${state.platform === "android" ? section("このアプリ", [
+    menuRow("rotate", "更新を確認", `今の版 ${esc(state.version || "")}${state.hubName ? ` ・ ${esc(state.hubName)} に頼みます` : " ・ Releases のページを開きます"}`, "call('checkUpdate')"),
+  ]) : ""}<p class="footnote">Theta Mensetsu Hatch ${state.version ? esc(state.version) + " ・ " : ""}${state.platform === "android" ? "Android版<br>データはこのスマホに保存し、Googleドライブの Theta Vault と同期します。" : state.platform === "web" ? "ブラウザ版<br>データはこのブラウザに保存し、Googleドライブの Theta Vault と同期します。" : "PC版<br>データは Theta Vault フォルダ（Markdown＋画像）に保存されます。"}</p>`;
 }
 function geminiPage() {
   if (!settingsDraft) settingsDraft = { key: "", model: state.model, format: state.format };
-  return `${backbar("Gemini APIキー・モデル")}<section class="panel"><p class="caption">APIキーはこの${state.platform === "web" ? "ブラウザ" : state.platform === "android" ? "スマホ（暗号化）" : "PC"}の中に保存します（同期・書き出しには含めません）。</p><label class="label">Gemini APIキー ${state.keySet ? "・登録済み" : ""}</label><input type="password" autocomplete="off" value="${esc(settingsDraft.key)}" placeholder="${state.keySet ? "変更する時だけ入力" : "AIza…"}" oninput="settingsDraft.key=this.value"><label class="label">モデル名</label><input id="model" value="${esc(settingsDraft.model)}" oninput="settingsDraft.model=this.value" autocomplete="off"><p class="caption">利用できるモデルはAPIキーごとに異なります。保存後に「モデル一覧」から選べます。</p><details class="gap"><summary class="caption">詳細設定</summary><label class="label">API互換設定（通常は変更不要）</label><select onchange="settingsDraft.format=this.value"><option value="legacy" ${settingsDraft.format === "legacy" ? "selected" : ""}>標準</option><option value="modern" ${settingsDraft.format === "modern" ? "selected" : ""}>新しいモデル向け</option></select></details><div class="row gap"><button class="primary" onclick="saveSettings()">保存</button><button class="outline" onclick="call('models')">モデル一覧</button></div>${state.keySet ? `<button class="danger full gap" onclick="if(confirm('保存しているAPIキーを削除しますか？'))call('settings',{clearKey:true})">APIキーを削除</button>` : ""}</section><div class="tip warning"><b>個人情報の取り扱い</b><br>読み取りのとき、履歴書の画像をGoogleのGemini APIへ送ります。<b>無料枠のAPIキーでは、送った内容がGoogleのサービス改善に使われることがあります。</b>応募者の個人情報を扱うため、請求先アカウント（有料）を設定したプロジェクトのAPIキーを使ってください（履歴書1枚あたりの費用は1円前後の目安です）。施設の個人情報の規程も確認してください。</div>`;
+  return `${backbar("Gemini APIキー・モデル")}<section class="panel"><p class="caption">APIキーはこの${state.platform === "web" ? "ブラウザ" : state.platform === "android" ? "スマホ（暗号化）" : "PC"}の中に保存します（同期・書き出しには含めません）。</p><label class="label">Gemini APIキー ${state.keySet ? "・登録済み" : ""}</label><input type="password" autocomplete="off" value="${esc(settingsDraft.key)}" placeholder="${state.keySet ? "変更する時だけ入力" : "AIza…"}" oninput="settingsDraft.key=this.value"><label class="label">モデル名</label><input id="model" value="${esc(settingsDraft.model)}" oninput="settingsDraft.model=this.value" autocomplete="off"><p class="caption">利用できるモデルはAPIキーごとに異なります。保存後に「モデル一覧」から選べます。</p><details class="gap"><summary class="caption">詳細設定</summary><label class="label">API互換設定（通常は変更不要）</label><select onchange="settingsDraft.format=this.value"><option value="legacy" ${settingsDraft.format === "legacy" ? "selected" : ""}>標準</option><option value="modern" ${settingsDraft.format === "modern" ? "selected" : ""}>新しいモデル向け</option></select></details><div class="row gap"><button class="primary" onclick="saveSettings()">保存</button><button class="outline" onclick="call('models')">モデル一覧</button></div>${state.keySet ? `<button class="danger full gap" onclick="if(confirm('保存しているAPIキーを削除しますか？'))call('settings',{clearKey:true})">APIキーを削除</button>` : ""}</section>${state.hubGeminiKey ? `<button class="secondary full gap" onclick="call('useHubKey')">${icon("spark")}${esc(state.hubName)} の Gemini APIキーを使う</button>` : ""}<div class="tip warning"><b>個人情報の取り扱い</b><br>読み取りのとき、履歴書の画像をGoogleのGemini APIへ送ります。<b>無料枠のAPIキーでは、送った内容がGoogleのサービス改善に使われることがあります。</b>応募者の個人情報を扱うため、請求先アカウント（有料）を設定したプロジェクトのAPIキーを使ってください（履歴書1枚あたりの費用は1円前後の目安です）。施設の個人情報の規程も確認してください。</div>`;
+}
+function exportSheet() {
+  const n = filtered().length;
+  modal(
+    `<h2>${icon("download")} まとめて書き出す</h2><p class="caption">1つの zip に、応募者のノート（Markdown）と、履歴書の画像・PDFの原本・顔写真・書類・録音・手書きメモをまとめます。zip を開けば Obsidian でそのまま読めます。読み込みは、メニューの「書き出したファイルを読み込む」から（別の端末でも）。</p><label class="label">だれを</label><select id="ex-who"><option value="all">すべての応募者（${state.people.length}人）</option>${n !== state.people.length ? `<option value="filter">今の絞り込みの人だけ（${n}人）</option>` : ""}</select><label class="mrow gap"><span class="mt"><b>録音も含める</b><small>大きくなります</small></span><input type="checkbox" class="switch" id="ex-rec" checked></label><p class="tip gap">個人情報のファイルです。保存先に気をつけてください。Gemini APIキーなどの秘密は含めません。</p><button class="primary full gap" onclick="const who=$('ex-who').value,rec=$('ex-rec').checked;closeModal();call('exportAll',Object.assign({recordings:rec},who==='filter'?{ids:filtered().map(p=>p.id)}:{}))">${icon("download")}書き出す</button>`,
+  );
+}
+function importPreviewSheet(d) {
+  modal(
+    `<h2>${icon("plus")} 読み込む前の確認</h2><p class="caption">${esc(d.name)}${d.from ? ` ・ ${esc(new Date(d.from).toLocaleString("ja-JP"))} に書き出し` : ""}</p><div class="mlist">${[
+      noteRow("users", `応募者 ${d.count}人`, `新しく加わる ${d.added}人${d.newer ? ` ・ 新しい内容で置き換え ${d.newer}人` : ""}${d.older ? ` ・ こちらの方が新しいので飛ばす ${d.older}人` : ""}`),
+      noteRow("image", `ファイル ${d.files}個`, "履歴書の画像・PDF・顔写真・書類など（同じものが既にあれば飛ばします）"),
+    ].join("")}</div>${d.warnings.length ? `<div class="tip warning gap">${d.warnings.map(esc).join("<br>")}</div>` : ""}${d.settings ? `<label class="mrow gap"><span class="mt"><b>設定も読み込む</b><small>職種の一覧・手続きのひな形・勤務先・連絡先の登録の設定など</small></span><input type="checkbox" class="switch" id="im-set"></label>` : ""}<button class="primary full gap" onclick="const set=$('im-set')?$('im-set').checked:false;closeModal();call('importConfirm',{settings:set})">${icon("check")}読み込む</button><button class="outline full" onclick="closeModal();call('importCancel')">やめる</button>`,
+  );
+}
+function importedSheet(d) {
+  modal(
+    `<h2>${icon("check")} 読み込みました</h2><div class="mlist">${noteRow("users", `新しく加えた ${d.added}人`, `${d.updated ? `置き換え ${d.updated}人 ・ ` : ""}${d.skipped ? `飛ばした ${d.skipped}人 ・ ` : ""}ファイル ${d.files}個`)}</div>${d.missing.length ? `<div class="tip warning gap">zip に無かったファイル（その画像は表示されません）：<br>${d.missing.slice(0, 30).map(esc).join("<br>")}${d.missing.length > 30 ? `<br>…ほか ${d.missing.length - 30}件` : ""}</div>` : ""}${d.warnings.length ? `<div class="tip warning gap">${d.warnings.slice(0, 30).map(esc).join("<br>")}</div>` : ""}${
+      d.unread ? (d.keySet ? `<button class="primary full gap" onclick="closeModal();batchRecognize()">${icon("spark")}読み取りがまだの ${d.unread}人を Gemini で読み取る</button>` : `<p class="caption gap">読み取りがまだの人が ${d.unread}人います。Gemini APIキーを設定すると、まとめて読み取れます。</p>`) : ""
+    }<button class="outline full gap" onclick="closeModal();filter='all';go('home')">一覧を見る</button>`,
+  );
 }
 function saveSettings() {
   call("settings", { ...settingsDraft });
@@ -1567,6 +1597,8 @@ window.onNative = ({ type, data }) => {
     } else if (state.people.some((p) => p.id === data)) openPerson(data);
     else pendingOpen = data;
   } else if (type === "review") pendingEdit = data;
+  else if (type === "importPreview") importPreviewSheet(data);
+  else if (type === "imported-archive") importedSheet(data);
   else if (type === "queued") {
     if (route !== "edit") route = "home";
     filter = "all";

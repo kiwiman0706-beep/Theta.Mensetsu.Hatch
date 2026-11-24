@@ -78,7 +78,7 @@ class AndroidGoogle extends GoogleApi {
     return r.token;
   }
   async signIn() {
-    const r = await native("token", { purpose: this.purpose, email: this.email, interactive: true, chooser: true });
+    const r = await native("token", { purpose: this.purpose, email: this.email || this.hint || "", interactive: true, chooser: true });
     this.email = r.email || this.email;
     this.access = { token: r.token, until: Date.now() + 45 * 60 * 1000 };
     this.blocked = false;
@@ -104,11 +104,11 @@ window.Native = {
 
 const fromIncoming = (list) => list.map((f) => ({ name: f.name, read: async () => Buffer.from(await (await fetch(f.path)).arrayBuffer()) }));
 
-function pickFiles(single) {
+function pickFiles(single, zip = false) {
   return new Promise((ok) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/*,application/pdf";
+    input.accept = zip ? ".zip,application/zip" : "image/*,application/pdf";
     input.multiple = !single;
     input.style.display = "none";
     document.body.appendChild(input);
@@ -134,8 +134,9 @@ const services = (store) => ({
       if (window.cameraSheet) window.cameraSheet({});
       return [];
     }
-    return pickFiles(single);
+    return pickFiles(single, action === "zip");
   },
+  saveBytes: async (name, bytes, type) => ((await native("saveFile", { name, b64: Buffer.from(bytes).toString("base64"), type: type || "application/zip" })).saved ? name : ""),
   openFolder: async () => "",
   saveFile: async (name, text) => ((await native("saveFile", { name, text, type: "text/csv" })).saved ? name : ""),
   openExternal: (url) => native("openUrl", { url }),
@@ -159,12 +160,22 @@ const services = (store) => ({
   const kv = { get: (k) => db.get("kv", k), put: (k, v) => db.put("kv", v, k) };
   const google = (purpose) => {
     const key = purpose === "contacts" ? "googleContactsEmail" : "googleSyncEmail";
-    return new AndroidGoogle(purpose, { get: () => settings.get(key, ""), set: (v) => settings.set({ [key]: v }) });
+    const g = new AndroidGoogle(purpose, { get: () => settings.get(key, ""), set: (v) => settings.set({ [key]: v }) });
+    g.hint = shared["google.account"] || ""; // the account the hub uses, offered first
+    return g;
   };
   let info = {};
   try {
     info = JSON.parse(A.info());
   } catch {}
+  // The series' hub (Home / KidsHome) on this phone: its shared settings come first.
+  let hub = {};
+  try {
+    hub = JSON.parse(A.hub());
+  } catch {}
+  const shared = hub.info || {};
+  if (shared["gemini.model"] && !settings.get("model", "")) settings.set({ model: shared["gemini.model"] });
+  const HUB_NAMES = { "app.thetahatch.home": "Home Hatch", "app.thetahatch.kidshome": "KidsHome Hatch" };
   backend = new Backend({
     store,
     settings,
@@ -174,14 +185,28 @@ const services = (store) => ({
     kv,
     platform: "android",
     caps: CAPS,
-    info: () => ({ version: info.version, appPackage: info.package, appSha1: info.sha1 }),
+    info: () => ({ version: info.version, appPackage: info.package, appSha1: info.sha1, hubName: HUB_NAMES[hub.hub] || "", hubGeminiKey: !!hub.hasGeminiKey && !A.secretGet(), hubAccount: shared["google.account"] || "" }),
   });
+  // What only the phone does: ask the hub to update this app, borrow the hub's Gemini key, and
+  // tell the hub about settings this app changed (model, Google account).
+  const handle = backend.handle.bind(backend);
+  backend.handle = async (action, q = {}) => {
+    if (action === "checkUpdate") return native("update", {});
+    if (action === "useHubKey") {
+      const ok = A.useHubGeminiKey();
+      backend.refresh();
+      return backend.toast(ok ? `${HUB_NAMES[hub.hub] || "ハブ"} の Gemini APIキーを使います` : "APIキーを受け取れませんでした");
+    }
+    await handle(action, q);
+    if (action === "settings" && q.model) A.hubWrite(JSON.stringify({ "gemini.model": settings.get("model", "") }));
+    if (action === "googleSignIn" && q.purpose !== "contacts" && backend.gSync && backend.gSync.email) A.hubWrite(JSON.stringify({ "google.account": backend.gSync.email }));
+  };
   backend.on((msg) => window.onNative && window.onNative(msg));
   window.ThetaCopy = (text) => native("copyText", { text });
   window.ThetaUpload = (files, q = {}) =>
     backend.receive(files.map((f) => ({ name: f.name, read: async () => Buffer.from(await f.blob.arrayBuffer()) })), q).catch((e) => window.onNative({ type: "error", data: e.message }));
   // Files shared to the app from Gmail, Files, Google Drive…
-  window.AndroidShared = (list) => backend.importFiles(fromIncoming(list), { mode: "file" }).catch((e) => window.onNative({ type: "error", data: e.message }));
+  window.AndroidShared = (list) => backend.receive(fromIncoming(list), { mode: "file" }).catch((e) => window.onNative({ type: "error", data: e.message }));
   backend.startSync();
   for (const [action, q] of early.splice(0)) backend.handle(action, q);
 })();

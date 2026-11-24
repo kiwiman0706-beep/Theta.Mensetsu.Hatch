@@ -22,7 +22,7 @@
 | 同期 | PC版はアプリが**Googleドライブと直接同期**（変更直後・3分ごと・ウインドウに戻ったとき・終了時）。同時に編集しても項目ごとにまとめ、食い違った値はメモに残す。詳しくは [`docs/SYNC.md`](docs/SYNC.md) |
 | PC版の別ウインドウ | 一覧で **Ctrl＋クリック**（または詳細画面右上のボタン）で、応募者を別ウインドウで開いて並べられる |
 | Obsidian | すべて `Theta Vault/Mensetsu/Applicants/氏名（職種）.md` に1人1ファイル。Obsidianで閲覧・編集してもアプリに反映されます（[`docs/MENSETSU_VAULT.md`](docs/MENSETSU_VAULT.md)） |
-| 書き出し | CSV（Excelで開ける。全員・今の絞り込み・1人） |
+| 書き出し・読み込み | **まとめて書き出す（zip）**：応募者のノートと履歴書の画像・PDF・顔写真・書類・録音・手書きを 1 つの zip に（開けば Obsidian で読める）。**読み込み**は足すだけ（形式は [`docs/IMPORT_FORMAT.md`](docs/IMPORT_FORMAT.md)、ほかで作った zip も可）。CSV（Excel 用）も |
 
 ## 版
 
@@ -48,4 +48,4 @@
 - 面接の録音は、応募者の同意を得てから行ってください。
 - 選考後の保管期間・廃棄は施設の規程に従ってください（削除した記録は `Theta Vault/.theta/trash/` に移るので、完全に消すときはそこも削除します）。
 
-Theta Hatch シリーズ共通の約束は [`docs/THETA_HATCH_SPEC.md`](docs/THETA_HATCH_SPEC.md) を参照してください。
+Theta Hatch シリーズ共通の約束（仕様・スキン・署名鍵・更新）は [Theta.Hatch.Series](https://github.com/kiwiman0706-beep/Theta.Hatch.Series) にあります。
