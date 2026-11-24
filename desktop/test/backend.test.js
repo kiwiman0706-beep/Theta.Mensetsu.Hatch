@@ -235,3 +235,19 @@ test("HTTP bridge: token, cookie, Host guard, UI, calls", async () => {
     srv.close();
   }
 });
+
+test("imported applicants already read (no Gemini reading) get their face photo cut in bulk", async () => {
+  const t = setup((prompt) => (/顔写真/.test(prompt) && /box/.test(prompt) ? { box: "100,700,300,950" } : { ...RESUME }));
+  t.setKey("k");
+  await t.store.writeMedia("p1.jpg", Buffer.from("PAGE1"));
+  const model = require("../lib/model");
+  t.store.put({ ...model.empty(), id: "imp1", name: "読込 花子", status: "confirmed", pages: [{ file: "p1.jpg", name: "1" }] });
+  t.store.put({ ...model.empty(), id: "imp2", name: "未読 太郎", status: "new", pages: [{ file: "p1.jpg", name: "1" }] });
+  assert.deepStrictEqual(t.backend.state().photoMissing, 1, "the unread one gets its photo when read");
+  await t.backend.dispatch("photoAll", {});
+  await t.settle();
+  const p = t.store.person("imp1");
+  assert.strictEqual(p.portraitSource, "resume");
+  assert.match(String(await t.store.readMedia(p.portrait)), /^face-of-PAGE1/);
+  assert.strictEqual(t.backend.state().photoMissing, 0);
+});

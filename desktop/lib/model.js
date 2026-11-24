@@ -178,6 +178,12 @@ function trimPhotoRect(px, w, h, r) {
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
 
+// Applicants with a résumé but no face photo yet (e.g. read in from a zip already transcribed):
+// the photo can still be cut from page 1. Unread ones get theirs when Gemini reads them.
+function photoPicks(people) {
+  return people.filter((p) => (p.pages || []).length && !p.portrait && !p.photoTried && !p.queue && p.status !== "new").map((p) => p.id);
+}
+
 // ---- sync ----------------------------------------------------------------------------------
 // Both sides changed since the last sync: field by field, the newer edit wins where it has a
 // value; lists are unioned so nothing written on either side is lost. When both sides hold
@@ -252,4 +258,4 @@ function media(p) {
   return out;
 }
 
-module.exports = { CHECKLIST, checkProgress, addChecklist, CATEGORIES, HEAD, empty, edit, merge, applyResult, today, age, csv, photoRect, trimPhotoRect, syncMerge, media };
+module.exports = { photoPicks, CHECKLIST, checkProgress, addChecklist, CATEGORIES, HEAD, empty, edit, merge, applyResult, today, age, csv, photoRect, trimPhotoRect, syncMerge, media };

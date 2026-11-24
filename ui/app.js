@@ -1439,6 +1439,7 @@ function menuPage() {
     only("folder", menuRow("folder", "フォルダから取り込む", "メールで届いたPDFを保存したフォルダなど", "call('folder',{mode:'file'})")),
     menuRow("edit", "手入力で追加", "書類なしで登録", "manualAdd()"),
   ])}${section("読み取り", [
+    state.photoMissing ? menuRow("user", "顔写真をまとめて切り出す", `顔写真の無い ${state.photoMissing}人（履歴書の1ページ目から。Gemini 1人1円以下の目安）`, "photoAll()", "attnrow") : "",
     menuRow("spark", "未読み取りをまとめて読み取る", unread ? unread + "件が未読み取り" : "未読み取りの応募者はいません", "batchRecognize()"),
     `<label class="mrow"><span class="mi">${icon("spark")}</span><span class="mt"><b>取り込み後に自動で読み取る</b><small>バックグラウンドで処理します</small></span><input type="checkbox" class="switch" ${state.autoRecognize !== false ? "checked" : ""} onchange="call('settings',{autoRecognize:this.checked})"></label>`,
     menuRow("spark", "Gemini APIキー・モデル", state.keySet ? "登録済み ・ " + esc(state.model) : "未設定", "go('gemini')", state.keySet ? "" : "attnrow"),
@@ -1484,12 +1485,16 @@ function importedSheet(d) {
   modal(
     `<h2>${icon("check")} 読み込みました</h2><div class="mlist">${noteRow("users", `新しく加えた ${d.added}人`, `${d.updated ? `置き換え ${d.updated}人 ・ ` : ""}${d.skipped ? `飛ばした ${d.skipped}人 ・ ` : ""}ファイル ${d.files}個`)}</div>${d.missing.length ? `<div class="tip warning gap">zip に無かったファイル（その画像は表示されません）：<br>${d.missing.slice(0, 30).map(esc).join("<br>")}${d.missing.length > 30 ? `<br>…ほか ${d.missing.length - 30}件` : ""}</div>` : ""}${d.warnings.length ? `<div class="tip warning gap">${d.warnings.slice(0, 30).map(esc).join("<br>")}</div>` : ""}${
       d.unread ? (d.keySet ? `<button class="primary full gap" onclick="closeModal();batchRecognize()">${icon("spark")}読み取りがまだの ${d.unread}人を Gemini で読み取る</button>` : `<p class="caption gap">読み取りがまだの人が ${d.unread}人います。Gemini APIキーを設定すると、まとめて読み取れます。</p>`) : ""
-    }<button class="outline full gap" onclick="closeModal();filter='all';go('home')">一覧を見る</button>`,
+    }${d.noPhoto ? (d.keySet ? `<button class="secondary full gap" onclick="closeModal();photoAll()">${icon("user")}顔写真の無い ${d.noPhoto}人の顔写真を履歴書から切り出す</button>` : `<p class="caption gap">顔写真の無い人が ${d.noPhoto}人います。Gemini APIキーを設定すると、履歴書から切り出せます。</p>`) : ""}<button class="outline full gap" onclick="closeModal();filter='all';go('home')">一覧を見る</button>`,
   );
 }
 function saveSettings() {
   call("settings", { ...settingsDraft });
   settingsDraft.key = "";
+}
+function photoAll() {
+  if (!state.keySet) return report("先に「Gemini APIキー・モデル」でAPIキーを登録してください。");
+  if (confirm(`顔写真の無い ${state.photoMissing || "全員"}人について、履歴書の1ページ目から顔写真を切り出します（Gemini に画像を送ります）。続けますか？`)) call("photoAll");
 }
 function batchRecognize() {
   if (!state.keySet) return report("先に「Gemini APIキー・モデル」でAPIキーを登録してください。");

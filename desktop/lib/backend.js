@@ -103,6 +103,7 @@ class Backend {
       caps: this.caps,
       people,
       categories: this.categories(),
+      photoMissing: model.photoPicks(people).length,
       checklistTemplate: this.checklistTemplate(),
       keySet: !!this.secrets.get(),
       model: s.get("model", "gemini-2.5-flash"),
@@ -316,7 +317,7 @@ class Backend {
         } finally {
           this.event("busy", "");
         }
-        return this.event("imported-archive", { added: r.added, updated: r.updated, skipped: r.skipped, files: r.files, unread: r.unread, missing: r.missing, warnings: r.warnings, keySet: !!this.secrets.get() });
+        return this.event("imported-archive", { added: r.added, updated: r.updated, skipped: r.skipped, files: r.files, unread: r.unread, noPhoto: model.photoPicks(st.people()).length, missing: r.missing, warnings: r.warnings, keySet: !!this.secrets.get() });
       }
       case "importCancel":
         this.pendingImport = null;
@@ -374,6 +375,13 @@ class Backend {
         const ids = st.people().filter((p) => p.status === "new" && p.pages.length && !p.queue).map((p) => p.id);
         this.enqueue(ids, "recognize");
         return this.toast(ids.length + "件をバックグラウンドで読み取ります");
+      }
+      case "photoAll": {
+        this.needKey();
+        const ids = model.photoPicks(st.people());
+        if (!ids.length) return this.toast("顔写真を切り出す応募者はいません");
+        this.enqueue(ids, "photo");
+        return this.toast(`${ids.length}人の顔写真を履歴書から切り出します（バックグラウンド）`);
       }
       case "photoOne":
         this.needKey();
@@ -881,7 +889,7 @@ class Backend {
     x.photoTried = true;
     if (!jpeg) {
       st.put(x, false);
-      if (ask) this.toast("顔写真が見つかりませんでした");
+      if (ask && this.store.people().filter((p) => p.queue === "photo").length === 0) this.toast("顔写真が見つかりませんでした");
       return false;
     }
     const name = crypto.randomUUID() + ".jpg";
