@@ -108,6 +108,11 @@ const groups = [
     ["career", "職歴", "history"],
     ["licenses", "免許・資格", "history"],
   ]],
+  ["勤務の希望（シフト）", [
+    ["shiftDays", "勤務できる曜日", "days"],
+    ["shiftKinds", "勤務できる勤務帯", "kinds"],
+    ["shiftHours", "時間帯・日数など（例 9:00〜16:00、週3日まで）", "area"],
+  ]],
   ["志望動機など", [
     ["motivation", "志望動機", "long"],
     ["selfPr", "自己PR・特技", "long"],
@@ -354,13 +359,13 @@ function pickBar(a) {
   if (!picking) return "";
   for (const id of [...picking]) if (!state.people.some((p) => p.id === id)) picking.delete(id);
   const all = a.length && a.every((p) => picking.has(p.id));
-  return `<div class="pickbar"><b>${picking.size}人を選択</b><button class="noflex" onclick="${all ? "picking.clear()" : `filtered().forEach((p)=>picking.add(p.id))`};updateList()">${all ? "選択を外す" : "表示中を全部選ぶ"}</button><button class="primary noflex" ${picking.size ? "" : "disabled"} onclick="retrySheet([...picking])">${icon("spark")}AIでやり直す</button></div>`;
+  return `<div class="pickbar"><b>${picking.size}人を選択</b><button class="noflex" onclick="${all ? "picking.clear()" : `filtered().forEach((p)=>picking.add(p.id))`};updateList()">${all ? "選択を外す" : "表示中を全部選ぶ"}</button><button class="primary noflex" ${picking.size ? "" : "disabled"} onclick="retrySheet([...picking])">${icon("spark")}AIに頼む・やり直す</button></div>`;
 }
 function personCards(a) {
   return `${pickBar(a)}<div class="cardlist">${a
     .map(
       (p) =>
-        `<button class="person ${picking ? "picking" : ""} ${picking && picking.has(p.id) ? "picked" : ""}" onclick="openPerson('${p.id}',event)" onauxclick="openPerson('${p.id}',event)">${picking ? `<span class="pickmark">${picking.has(p.id) ? icon("check") : ""}</span>` : ""}${avatar(p)}<div class="personbody"><h3 class="ell">${esc(title(p))}${age(p.birthDate) !== "" ? ` <small>${age(p.birthDate)}歳</small>` : ""}</h3><div class="company ell">${esc(job(p))}${p.position ? " ・ " + esc(p.position) : ""}</div><div class="personmeta">${stageBadge(p)}${p.queue ? `<span class="badge new">処理中</span>` : p.status === "confirmed" && !p.suggestion ? "" : `<span class="badge review">${p.suggestion ? "要確認" : status(p)}</span>`}${p.interview ? `<span class="when">${icon("cal")}${esc(when(p.interview))}</span>` : p.appliedDate ? `<span>応募 ${esc(when(p.appliedDate))}</span>` : ""}${+p.rating ? `<span class="stars">${stars(p.rating)}</span>` : ""}${p.agency ? `<span>紹介：${esc(p.agency)}</span>` : ""}${(p.checklist || []).length ? `<span class="${p.checklist.every((c) => c.done) ? "" : "when"}">${icon("check")}手続き ${p.checklist.filter((c) => c.done).length}/${p.checklist.length}</span>` : ""}${p.contactId ? `<span title="Google連絡先に登録済み">${icon("user")}</span>` : ""}${p.notes?.length ? `<span>メモ ${p.notes.length}</span>` : ""}</div>${pinned(p)}</div><span class="chevron">${icon("next")}</span></button>`,
+        `<button class="person ${picking ? "picking" : ""} ${picking && picking.has(p.id) ? "picked" : ""}" onclick="openPerson('${p.id}',event)" onauxclick="openPerson('${p.id}',event)">${picking ? `<span class="pickmark">${picking.has(p.id) ? icon("check") : ""}</span>` : ""}${avatar(p)}<div class="personbody"><h3 class="ell">${esc(title(p))}${age(p.birthDate) !== "" ? ` <small>${age(p.birthDate)}歳</small>` : ""}</h3><div class="company ell">${esc(job(p))}${p.position ? " ・ " + esc(p.position) : ""}</div><div class="personmeta">${stageBadge(p)}${p.queue ? `<span class="badge new">処理中</span>` : p.status === "confirmed" && !p.suggestion ? "" : `<span class="badge review">${p.suggestion ? "要確認" : status(p)}</span>`}${p.interview ? `<span class="when">${icon("cal")}${esc(when(p.interview))}</span>` : p.appliedDate ? `<span>応募 ${esc(when(p.appliedDate))}</span>` : ""}${+p.rating ? `<span class="stars">${stars(p.rating)}</span>` : ""}${p.agency ? `<span>紹介：${esc(p.agency)}</span>` : ""}${shiftLine(p)}${(p.checklist || []).length ? `<span class="${p.checklist.every((c) => c.done) ? "" : "when"}">${icon("check")}手続き ${p.checklist.filter((c) => c.done).length}/${p.checklist.length}</span>` : ""}${p.contactId ? `<span title="Google連絡先に登録済み">${icon("user")}</span>` : ""}${p.notes?.length ? `<span>メモ ${p.notes.length}</span>` : ""}</div>${pinned(p)}</div><span class="chevron">${icon("next")}</span></button>`,
     )
     .join("")}</div>`;
 }
@@ -936,7 +941,7 @@ function detail() {
   return `${backbar("", `${can("windows") && !solo ? `<button onclick="openWindow('${p.id}')" aria-label="別ウインドウで開く" title="別ウインドウで開く">${icon("share")}</button>` : ""}<button onclick="beginEdit()" aria-label="編集">${icon("edit")}</button><button onclick="detailMenu()" aria-label="その他の操作">${icon("more")}</button>`)}<div class="detailsHead"><button class="facebtn" onclick="assetSheet()" aria-label="顔写真">${avatar(p, "big")}</button><div class="content"><small>${esc(p.kana)}</small><h1>${esc(title(p))}</h1><p class="muted">${[a !== "" ? a + "歳" : "", p.gender, p.birthDate ? "生年月日 " + when(p.birthDate, true).replace(/\(.\)/, "") : ""].filter(Boolean).map(esc).join(" ・ ")}</p><p><b>${esc(job(p))}</b>${p.position ? " ・ " + esc(p.position) : ""}${p.employment ? " ・ " + esc(p.employment) : ""}</p>${p.agency ? `<span class="badge st-scheduled">紹介：${esc(p.agency)}</span> ` : ""}${p.status === "confirmed" && !p.suggestion ? "" : `<span class="badge review">${p.suggestion ? "読み取り結果あり" : status(p)}</span>`}</div></div>
 <div class="selection panel"><label><span class="label">選考状況</span><select onchange="setField('stage',this.value)">${STAGES.map(([v, l]) => `<option value="${v}" ${p.stage === v ? "selected" : ""}>${l}</option>`).join("")}</select></label><label><span class="label">面接日時</span><input type="datetime-local" value="${esc(toLocalInput(p.interview))}" onchange="setField('interview',fromLocalInput(this.value))"></label><div><span class="label">評価</span><div class="rate" role="radiogroup" aria-label="評価">${[1, 2, 3, 4, 5].map((n) => `<button class="${+p.rating >= n ? "on" : ""}" onclick="setField('rating','${+p.rating === n ? "" : n}')" aria-label="${n}">${icon("star")}</button>`).join("")}</div></div></div>
 <div class="gap">${primaryAction(p)}</div>${p.warnings ? `<div class="tip warning gap">読み取り時の注意：${esc(p.warnings)}</div>` : ""}${p.queueError ? `<div class="tip warning gap">処理できませんでした：${esc(p.queueError)}</div>` : ""}<div class="gap">${contactBox(p)}</div>
-<div class="detailcols"><div>${section("連絡先", ["mobile", "phone", "email", "postal", "address"], p)}${commuteBox(p)}${decisionBox(p)}${checkBox(p)}${section("応募", ["appliedDate", "source", "agency", "agencyContact", "agencyFee", "interviewers", "startDate", "tags"], p)}${section("学歴・職歴・資格", ["education", "career", "licenses"], p, true)}${section("志望動機など", ["motivation", "selfPr", "wishes"], p, true)}${
+<div class="detailcols"><div>${section("連絡先", ["mobile", "phone", "email", "postal", "address"], p)}${commuteBox(p)}${decisionBox(p)}${checkBox(p)}${section("応募", ["appliedDate", "source", "agency", "agencyContact", "agencyFee", "interviewers", "startDate", "tags"], p)}${section("学歴・職歴・資格", ["education", "career", "licenses"], p, true)}${shiftBox(p)}${section("志望動機など", ["motivation", "selfPr", "wishes"], p, true)}${reviewBox(p)}${
     !FIELDS.some((k) => !["name", "kana", "stage", "rating", "interview", "category", "position", "employment", "birthDate", "gender"].includes(k) && String(p[k] || "").trim())
       ? `<p class="caption">まだ詳しい情報がありません。読み取るか、右上の編集から入力してください。</p>`
       : ""
@@ -977,7 +982,7 @@ function detailMenu() {
       menuRow("edit", "手書きメモ", "ペン・指で書く（筆圧対応）", "closeModal();sketchOpen('')"),
       can("windows") ? menuRow("share", "別ウインドウで開く", "一覧で Ctrl＋クリックでも開けます", "closeModal();openWindow(selected)") : "",
       p.pages.length && can("gemini") ? menuRow("spark", "Geminiで読み取り直す", "結果は保存前に確認できます", "closeModal();reread()") : "",
-      (p.pages.length || hasPdf(p)) && can("gemini") ? menuRow("spark", "モデルを変えてAIでやり直す", "履歴書の読み取り・顔写真の切り出し", "retrySheet([selected])") : "",
+      can("gemini") ? menuRow("spark", "モデルを変えてAIに頼む・やり直す", "履歴書の読み取り・顔写真の切り出し・AIの見立て", "retrySheet([selected])") : "",
       menuRow("user", "顔写真", p.portrait ? (p.portraitSource ? "履歴書から切り出し済み" : "手動で登録済み") : "履歴書から切り出す・画像を選ぶ", "assetSheet()"),
       menuRow("download", "書類を添付", "職務経歴書・免許証の写し・紹介状など", "attachSheet()"),
       can("contacts") && p.contactId ? menuRow("close", "Google連絡先から削除", "応募者の記録は残ります", "closeModal();unlinkContact()") : "",
@@ -1017,11 +1022,17 @@ function assetSheet() {
 }
 // ---- Again with Gemini, maybe with another model (one applicant, or those ticked in the list) ----
 let modelList = [];
-function retrySheet(ids) {
+function retrySheet(ids, what = "read") {
   if (!state.keySet) return report("メニュー →「Gemini APIキー・モデル」で、APIキーを登録してください。");
   window.retryIds = ids;
   modal(
-    `<h2>${icon("spark")} AIでやり直す</h2><p class="caption">${ids.length === 1 ? esc(title(state.people.find((p) => p.id === ids[0]) || {})) : ids.length + "人"}について、Gemini にもう一度頼みます（バックグラウンド）。</p><label class="label">やり直すこと</label><select id="retryWhat"><option value="read">履歴書の読み取り（結果は「要確認」になり、確認してから保存）</option><option value="photo">顔写真の切り出し（手で登録した顔写真はそのまま）</option></select><label class="label">モデル</label><input id="retryModel" list="retryModels" value="${esc(state.model)}" autocomplete="off"><datalist id="retryModels">${modelList.map((m) => `<option value="${esc(m)}">`).join("")}</datalist><p class="caption">ふだんのモデルは ${esc(state.model)}。ここで変えても、ふだんのモデルは変わりません。<button class="link" onclick="call('models',{for:'retry'})">使えるモデルの一覧を取得</button></p><button class="primary full gap" onclick="const q={ids:window.retryIds,what:$('retryWhat').value,model:$('retryModel').value};closeModal();picking=null;call('retryAI',q)">やり直す</button>`,
+    `<h2>${icon("spark")} AIに頼む・やり直す</h2><p class="caption">${ids.length === 1 ? esc(title(state.people.find((p) => p.id === ids[0]) || {})) : ids.length + "人"}について、Gemini にもう一度頼みます（バックグラウンド）。</p><label class="label">やり直すこと</label><select id="retryWhat">${[
+      ["read", "履歴書の読み取り（結果は「要確認」になり、確認してから保存）"],
+      ["photo", "顔写真の切り出し（手で登録した顔写真はそのまま）"],
+      ["review", "AIの見立て（良い点・懸念点・面接での質問）"],
+    ]
+      .map(([v, l]) => `<option value="${v}" ${v === what ? "selected" : ""}>${l}</option>`)
+      .join("")}</select><label class="label">モデル</label><input id="retryModel" list="retryModels" value="${esc(state.model)}" autocomplete="off"><datalist id="retryModels">${modelList.map((m) => `<option value="${esc(m)}">`).join("")}</datalist><p class="caption">ふだんのモデルは ${esc(state.model)}。ここで変えても、ふだんのモデルは変わりません。<button class="link" onclick="call('models',{for:'retry'})">使えるモデルの一覧を取得</button></p><button class="primary full gap" onclick="const q={ids:window.retryIds,what:$('retryWhat').value,model:$('retryModel').value};closeModal();picking=null;call('retryAI',q)">やり直す</button>`,
   );
 }
 // ---- Cutting the face photo out by hand ------------------------------------------------------
@@ -1156,10 +1167,48 @@ function fieldInput([k, l, kind]) {
   else if (kind === "datetime") input = `<input type="datetime-local" value="${esc(toLocalInput(v))}" onchange="draft['${k}']=fromLocalInput(this.value)">`;
   else if (kind === "date") input = `<input type="date" value="${esc(v)}" oninput="${set}">`;
   else if (kind === "long") input = `<textarea rows="5" oninput="${set}">${esc(v)}</textarea>`;
+  else if (kind === "days" || kind === "kinds") input = `<div class="shiftchips" id="chips-${k}">${shiftChips(k, v, `draftChip('${k}',this.dataset.v)`)}</div>`;
   else if (kind === "area") input = `<textarea style="min-height:${k === "address" ? 80 : 50}px" rows="${k === "address" ? 2 : 1}" oninput="${set}">${esc(v)}</textarea>`;
   else input = `<input type="text" value="${esc(v)}" oninput="${set}" ${k === "kana" ? 'placeholder="やまだ はなこ"' : ""}>`;
   const changed = draft.fromSuggestion && String(draft.base[k] || "") !== String(v || "") && draft.base[k];
   return `<label class="${wide ? "span2" : ""}"><span class="label">${l}${changed ? ` <small class="was">変更前：${esc(String(draft.base[k]).slice(0, 30))}</small>` : ""}</span>${input}</label>`;
+}
+// ---- Shifts: the days and kinds of shift the applicant can work, and hours in words --------------
+const SHIFT = { shiftDays: ["月", "火", "水", "木", "金", "土", "日", "祝"], shiftKinds: ["日勤", "早番", "遅番", "夜勤", "当直", "オンコール"] };
+const shiftList = (v) => String(v || "").split(/[、,，\n]/).map((x) => x.trim()).filter(Boolean);
+function shiftChips(k, v, onclick) {
+  const on = shiftList(v);
+  return [...SHIFT[k], ...on.filter((x) => !SHIFT[k].includes(x))].map((x) => `<button type="button" class="chip ${on.includes(x) ? "active" : ""}" data-v="${esc(x)}" aria-pressed="${on.includes(x)}" onclick="${onclick}">${esc(x)}</button>`).join("");
+}
+function toggleShift(v, x, k) {
+  const on = shiftList(v);
+  const next = on.includes(x) ? on.filter((y) => y !== x) : [...on, x];
+  return [...SHIFT[k].filter((y) => next.includes(y)), ...next.filter((y) => !SHIFT[k].includes(y))].join("、");
+}
+function draftChip(k, x) {
+  draft[k] = toggleShift(draft[k], x, k);
+  $("chips-" + k).innerHTML = shiftChips(k, draft[k], `draftChip('${k}',this.dataset.v)`);
+}
+function shiftBox(p) {
+  const row = (k, l) => `<div class="para"><small>${l}</small><div class="shiftchips">${shiftChips(k, p[k], `setField('${k}',toggleShift(getPerson()['${k}'],this.dataset.v,'${k}'))`)}</div></div>`;
+  return `<section class="panel"><h3>勤務の希望（シフト）</h3><p class="caption">押すと付け外しできます。</p>${row("shiftDays", "勤務できる曜日")}${row("shiftKinds", "勤務できる勤務帯")}${
+    p.shiftHours ? `<div class="para"><small>時間帯・日数など</small><p class="pre">${esc(p.shiftHours)}</p></div>` : `<p class="caption">時間帯・日数（例 9:00〜16:00、週3日まで）は右上の編集から。</p>`
+  }</section>`;
+}
+function shiftLine(p) {
+  const d = shiftList(p.shiftDays), k = shiftList(p.shiftKinds);
+  return d.length || k.length ? `<span>${icon("cal")}${esc([d.join(""), k.join("・")].filter(Boolean).join(" "))}</span>` : "";
+}
+// ---- The AI's notes for the interview (reference only) -----------------------------------------
+function reviewBox(p) {
+  const a = p.aiReview;
+  const go = `call('retryAI',{ids:[selected],what:'review'})`;
+  if (!a)
+    return can("gemini") ? `<section class="panel"><h3>${icon("spark")}AIの見立て</h3><p class="caption">職歴・資格・志望動機・勤務の希望・面接メモから、良い点・懸念される点・面接での質問を作ります（参考。氏名・年齢・性別・住所などは AI に渡しません）。</p><div class="row gap"><button class="secondary" onclick="${state.keySet ? go : "report('メニュー →「Gemini APIキー・モデル」で、APIキーを登録してください。')"}">${icon("spark")}良い点・懸念点・質問を作る</button><button class="outline" onclick="retrySheet([selected],'review')">モデルを選んで作る</button></div></section>` : "";
+  const list = (t) => `<ul class="ailist">${String(t || "").split("\n").map((l) => l.replace(/^\s*[・\-*]\s*/, "").trim()).filter(Boolean).map((l) => `<li>${esc(l)}</li>`).join("")}</ul>`;
+  return `<section class="panel aireview"><h3>${icon("spark")}AIの見立て <small>${esc((a.date || "").replace("T", " "))} ・ ${esc(a.model || "")}</small></h3><p class="caption">AI による参考です。採否は面接と書類で判断してください。</p>${a.summary ? `<p>${esc(a.summary)}</p>` : ""}<div class="para"><small>良い点</small>${list(a.strengths)}</div><div class="para"><small>懸念される点・確認したい点</small>${list(a.concerns)}</div><div class="para"><small>面接での質問</small>${list(a.questions)}</div>${
+    can("gemini") ? `<div class="row gap"><button class="outline" onclick="${go}">${icon("spark")}作り直す</button><button class="outline" onclick="retrySheet([selected],'review')">モデルを選んで作り直す</button></div>` : ""
+  }</section>`;
 }
 // Education, work history and licences are kept as lines "YYYY-MM text" (readable in Obsidian);
 // here they are edited row by row.

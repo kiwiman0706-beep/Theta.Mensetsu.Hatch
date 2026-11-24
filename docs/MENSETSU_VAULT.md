@@ -47,6 +47,9 @@ licenses: |-
 motivation: …
 self_pr: …
 wishes: …
+shift_days: [月, 水, 土]         # 勤務できる曜日（月 火 水 木 金 土 日 祝）
+shift_kinds: [日勤, 夜勤]         # 勤務できる勤務帯（日勤 早番 遅番 夜勤 当直 オンコール。ほかの言葉も可）
+shift_hours: 9:00〜16:00、週3日まで
 tags: [経験者, 夜勤可]
 status: confirmed         # 読み取りの状態（new / review / confirmed）
 contact_registered: true
@@ -58,6 +61,16 @@ pages: [Mensetsu/_files/…-0.jpg, …]
 originals: [{file: Mensetsu/_files/….pdf, name: 履歴書.pdf, sha256: …}]
 portrait: Mensetsu/_files/….jpg
 portrait_source: resume   # 無ければ手動で選んだ写真（自動では置き換えない）
+ai_review:                # AI の見立て（参考）。氏名・年齢・性別・住所などは AI に渡さない
+  date: 2026-11-25T06:10
+  model: gemini-2.5-flash
+  summary: …
+  strengths: |-
+    ・…
+  concerns: |-
+    ・…
+  questions: |-
+    ・…（ねらい：…）
 documents:
 - {id: …, date: 2026-10-21, kind: 免許証・資格証の写し, title: 看護師免許, files: [...], originals: [...]}
 recordings:

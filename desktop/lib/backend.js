@@ -212,16 +212,18 @@ class Backend {
         // Again with Gemini, for one or many, optionally with another model. A résumé read again
         // comes back as a suggestion to check (what is saved stays until it is confirmed).
         this.needKey();
-        const what = q.what === "photo" ? "photo" : "read";
+        const what = ["photo", "review"].includes(q.what) ? q.what : "read";
         const useModel = String(q.model || "").trim();
         const ids = (Array.isArray(q.ids) ? q.ids : [id]).filter((i) => {
           const p = st.person(i);
+          if (p && what === "review") return !!model.reviewInfo(p);
           return p && ((p.pages || []).length || (what === "photo" && model.hasPdf(p))) && !(what === "photo" && p.portrait && !p.portraitSource);
         });
+        if (!ids.length && what === "review") return this.toast("AIに渡せる情報がありません（職歴・資格・志望動機・面接メモなどを先に入れてください）");
         if (!ids.length) return this.toast(what === "photo" ? "やり直せる人がいません（履歴書のページが無いか、顔写真を手で登録済み）" : "やり直せる人がいません（履歴書のページがありません）");
         for (const i of ids) {
           const p = st.person(i);
-          p.queue = what === "photo" ? "photo" : p.status === "new" ? "recognize" : "reread";
+          p.queue = what === "photo" || what === "review" ? what : p.status === "new" ? "recognize" : "reread";
           if (useModel) p.queueModel = useModel;
           else delete p.queueModel;
           delete p.queueError;
@@ -229,7 +231,7 @@ class Backend {
           st.put(p, false);
         }
         this.work();
-        return this.toast(`${ids.length}人の${what === "photo" ? "顔写真の切り出し" : "履歴書の読み取り"}をやり直します（${useModel || this.cfg().model}、バックグラウンド）`);
+        return this.toast(`${ids.length}人の${what === "photo" ? "顔写真の切り出し" : what === "review" ? "AIの見立て（良い点・懸念点・質問）" : "履歴書の読み取り"}を${what === "review" ? "作ります" : "やり直します"}（${useModel || this.cfg().model}、バックグラウンド）`);
       }
       case "editNote": {
         const p = st.person(id);
@@ -885,10 +887,11 @@ class Backend {
         const next = this.store.people().find((p) => p.queue);
         if (!next) break;
         const left = this.store.people().filter((p) => p.queue).length;
-        this.processing = `${next.queue === "photo" ? "顔写真を切り出し中" : "履歴書を読み取り中"}（残り${left}件${next.queueModel ? "・" + next.queueModel : ""}）`;
+        this.processing = `${next.queue === "photo" ? "顔写真を切り出し中" : next.queue === "review" ? "AIの見立てを作成中" : "履歴書を読み取り中"}（残り${left}件${next.queueModel ? "・" + next.queueModel : ""}）`;
         this.refresh();
         try {
           if (next.queue === "photo") await this.cutPhoto(next.id, null, next.queueModel);
+          else if (next.queue === "review") await this.review(next.id);
           else if (next.queue === "reread") {
             const r = await this.read(next);
             const p = this.store.person(next.id);
@@ -911,7 +914,7 @@ class Backend {
           const m = String(e.message);
           if (/HTTP (402|429|401|403)|APIキー/.test(m)) {
             if (/HTTP 402/.test(m)) errors.push("Gemini の前払いのクレジットが残っていません。Google AI Studio（ai.studio）の「Billing」でクレジットを足してください。");
-            errors.push(m + (next.queue === "photo" ? "\n残りは後でメニューの「顔写真をまとめて切り出す」から再開できます" : "\n残りは後で「未読み取りをまとめて読み取る」から再開できます"));
+            errors.push(m + (next.queue === "photo" ? "\n残りは後でメニューの「顔写真をまとめて切り出す」から再開できます" : next.queue === "review" ? "\n残りは後で「AIでやり直す」から作り直せます" : "\n残りは後で「未読み取りをまとめて読み取る」から再開できます"));
             break;
           }
           failed++;
@@ -959,6 +962,22 @@ class Backend {
     x.pages = [...(x.pages || []), ...pages];
     st.put(x);
     return pages.length;
+  }
+
+  // Strengths, concerns and questions for the interview, from what is known (no images).
+  async review(id) {
+    const st = this.store;
+    const p = st.person(id);
+    const useModel = p.queueModel;
+    delete p.queue;
+    delete p.queueModel;
+    st.put(p, false);
+    const info = model.reviewInfo(p);
+    if (!info) throw new Error("AIに渡せる情報がありません");
+    const r = await gemini.generate(this.cfg(useModel), "review", [], this.fetch, { info, category: p.category || p.position || "（未設定）" });
+    const x = st.person(id);
+    x.aiReview = { date: new Date().toISOString().slice(0, 16), model: this.cfg(useModel).model, summary: r.summary, strengths: r.strengths, concerns: r.concerns, questions: r.questions };
+    st.put(x);
   }
 
   async cutPhoto(id, box, useModel) {

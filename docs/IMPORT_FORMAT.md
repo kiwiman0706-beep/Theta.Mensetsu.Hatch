@@ -129,6 +129,7 @@ portrait_source: resume
 | `phone`・`mobile`・`email` | 電話・携帯・メール | **リスト**：`[090-0000-0000]`、複数なら `[a@example.com, b@example.com]` |
 | `education`・`career`・`licenses` | 学歴・職歴・免許資格 | 1 行 1 件、`YYYY-MM 内容`（`|-` の複数行） |
 | `motivation`・`self_pr`・`wishes` | 志望動機・自己PR・本人希望 | 文（複数行は `|-`） |
+| `shift_days`・`shift_kinds`・`shift_hours` | 勤務できる曜日・勤務帯・時間帯や日数 | 曜日と勤務帯はリスト：`[月, 水, 土]`・`[日勤, 夜勤]`（曜日は 月〜日・祝、勤務帯は 日勤・早番・遅番・夜勤・当直・オンコール。ほかの言葉も可）。時間帯は文（例 `9:00〜16:00、週3日まで`） |
 | `tags` | タグ | リスト：`[経験者, 夜勤可]` |
 | `status` | 読み取りの状態 | `new`（まだ。Gemini で読み取れる）・`review`（要確認）・`confirmed`（確認済み）。省略時は `name` があれば `confirmed` |
 | `created`・`updated` | 作った日時・更新日時 | ISO 8601（例 `2026-11-24T10:00:00+09:00`）。省略時は読み込んだ時刻。**同じ id を読み込み直すときは `updated` を新しくする**（古いと飛ばされる） |

@@ -301,3 +301,27 @@ test("AI again with another model (many at once), and memos pinned to the list",
   await t.backend.dispatch("pinNote", { id: "a1", noteId: n.id, pin: false });
   assert.ok(!t.store.person("a1").notes[0].pin);
 });
+
+test("shifts kept in the vault; the AI's notes made from job-related facts only", async () => {
+  const t = setup((prompt) => (/面接官向けの参考メモ/.test(prompt) ? { summary: "病棟経験8年", strengths: "・急性期の経験", concerns: "・夜勤の回数", questions: "・夜勤は月何回まで可能ですか（ねらい：勤務条件）" } : { ...RESUME }));
+  t.setKey("k");
+  const model = require("../lib/model");
+  t.store.put({ ...model.empty(), id: "s1", name: "勤務 花子", birthDate: "1980-01-01", address: "東京都秘密区1-1", category: "看護師", career: "2015-04 ○○病院 病棟 入職", status: "confirmed", shiftDays: "月、水、土", shiftKinds: "日勤、夜勤", shiftHours: "週4日まで" });
+  const codec = require("../lib/vault-codec");
+  const md = codec.render(t.store.person("s1"));
+  assert.match(md, /shift_days:\n- 月\n- 水\n- 土/);
+  const back = codec.parse(md, "x.md");
+  assert.strictEqual(back.shiftKinds, "日勤、夜勤");
+  assert.strictEqual(back.shiftHours, "週4日まで");
+  await t.backend.dispatch("retryAI", { ids: ["s1"], what: "review", model: "gemini-3.8-flash" });
+  await t.settle();
+  const p = t.store.person("s1");
+  assert.strictEqual(p.aiReview.strengths, "・急性期の経験");
+  assert.strictEqual(p.aiReview.model, "gemini-3.8-flash");
+  const sent = t.calls.at(-1);
+  assert.match(sent.prompt, /週4日まで/);
+  assert.doesNotMatch(sent.prompt, /勤務 花子|秘密区|1980/, "name, address and birth date stay out");
+  assert.strictEqual(sent.body.contents[0].parts.length, 1, "no images");
+  const again = codec.parse(codec.render(p), "x.md");
+  assert.strictEqual(again.aiReview.questions, "・夜勤は月何回まで可能ですか（ねらい：勤務条件）");
+});

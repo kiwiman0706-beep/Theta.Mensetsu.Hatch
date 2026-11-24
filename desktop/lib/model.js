@@ -116,7 +116,7 @@ const HEAD = {
   department: "配属先", commuteCost: "通勤費（概算）", appliedDate: "応募日", agency: "紹介会社", agencyContact: "紹介会社の担当者", agencyFee: "紹介手数料・返金規定", source: "応募経路", interview: "面接日時",
   interviewers: "面接担当", startDate: "入職可能日", commute: "通勤", postal: "郵便番号", address: "住所", phone: "電話",
   mobile: "携帯", email: "メール", education: "学歴", career: "職歴", licenses: "免許・資格", motivation: "志望動機",
-  selfPr: "自己PR", wishes: "本人希望", tags: "タグ",
+  selfPr: "自己PR", wishes: "本人希望", shiftDays: "勤務できる曜日", shiftKinds: "勤務できる勤務帯", shiftHours: "勤務の時間帯・日数", tags: "タグ",
 };
 
 function csv(people) {
@@ -188,6 +188,18 @@ function photoPicks(people) {
   return people.filter((p) => ((p.pages || []).length || hasPdf(p)) && !p.portrait && !p.photoTried && !p.queue && p.status !== "new").map((p) => p.id);
 }
 
+// What the AI may look at for its notes on an applicant: the job-related fields, the interview
+// memos and the recordings' summaries. Name, age, sex, address and contacts are left out.
+function reviewInfo(p) {
+  const keys = ["position", "employment", "education", "career", "licenses", "motivation", "selfPr", "wishes", "shiftDays", "shiftKinds", "shiftHours", "commute", "startDate"];
+  const parts = keys.filter((k) => String(p[k] || "").trim()).map((k) => `【${HEAD[k] || k}】\n${String(p[k]).trim()}`);
+  const notes = (p.notes || []).map((n) => "・" + String(n.text || "").trim()).filter((t) => t.length > 1);
+  if (notes.length) parts.push("【面接メモ】\n" + notes.join("\n"));
+  const recs = (p.recordings || []).map((r) => String(r.summary || "").trim()).filter(Boolean);
+  if (recs.length) parts.push("【面接の録音の要約】\n" + recs.join("\n"));
+  return parts.join("\n\n").slice(0, 30000);
+}
+
 // ---- sync ----------------------------------------------------------------------------------
 // Both sides changed since the last sync: field by field, the newer edit wins where it has a
 // value; lists are unioned so nothing written on either side is lost. When both sides hold
@@ -206,7 +218,7 @@ function syncMerge(local, remote, now = Date.now()) {
     // The stage only moves forward unless someone set it back deliberately (newer side wins).
     lost.push(`選考状況：${V.STAGES[other.stage] || other.stage}`);
   }
-  for (const k of ["portrait", "rawText", "warnings", "contactId", "contactAccount"])
+  for (const k of ["portrait", "rawText", "warnings", "contactId", "contactAccount", "aiReview"])
     if (!base[k] && other[k]) {
       base[k] = other[k];
       if (k === "portrait") base.portraitSource = other.portraitSource;
@@ -262,5 +274,5 @@ function media(p) {
   return out;
 }
 
-module.exports = { photoPicks,
+module.exports = { photoPicks, reviewInfo,
   hasPdf, CHECKLIST, checkProgress, addChecklist, CATEGORIES, HEAD, empty, edit, merge, applyResult, today, age, csv, photoRect, trimPhotoRect, syncMerge, media };

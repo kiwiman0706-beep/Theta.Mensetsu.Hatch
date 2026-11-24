@@ -40,7 +40,7 @@ async function models(key, fetchImpl) {
 
 // images: Buffers of JPEG (already downscaled by the caller).
 async function generate({ key, model, format }, kind, images, fetchImpl, vars = {}) {
-  if (!images.length) throw new Error("画像を追加してください");
+  if (!images.length && !PROMPTS[kind].text) throw new Error("画像を追加してください");
   if (images.length > 20) throw new Error("1件の認識は20ページまでです");
   if (!/^[A-Za-z0-9._-]+$/.test(model)) throw new Error("モデル名が不正です");
   const { keys } = PROMPTS[kind];

@@ -56,13 +56,16 @@ const SPEC = [
   ["motivation", "motivation"],
   ["selfPr", "self_pr"],
   ["wishes", "wishes"],
+  ["shiftDays", "shift_days", "t"],
+  ["shiftKinds", "shift_kinds", "t"],
+  ["shiftHours", "shift_hours"],
   ["tags", "tags", "t"],
 ];
 const FIELDS = SPEC.map((x) => x[0]);
 const ORDER = [
   "theta", "rev", "id", ...SPEC.map((x) => x[1]), "status", "contact_registered", "contact_unlinked",
   "google_contact", "google_contact_account", "import_key", "not_duplicate", "warnings", "created",
-  "updated", "pages", "originals", "portrait", "portrait_source", "documents", "recordings", "evaluations", "sketches",
+  "updated", "pages", "originals", "portrait", "portrait_source", "documents", "recordings", "evaluations", "sketches", "ai_review",
 ];
 const OWN = new Set(ORDER);
 // Fields that only make sense on one device (queues, a pending Gemini result): never in the vault.
@@ -179,6 +182,12 @@ function render(p) {
     return m;
   });
   if (docs.length) fm.documents = docs;
+  // The AI's notes for the interview (strengths, concerns, questions): for reference only.
+  if (p.aiReview && typeof p.aiReview === "object") {
+    const a = {};
+    for (const k of AI_REVIEW) if (String(p.aiReview[k] || "").trim()) a[k] = String(p.aiReview[k]).trim();
+    if (Object.keys(a).length) fm.ai_review = a;
+  }
   const recs = (p.recordings || [])
     .filter((r) => r.file)
     .map((r) => {
@@ -274,6 +283,7 @@ const str = (v) => {
   return String(v).trim();
 };
 const PIN = "📌";
+const AI_REVIEW = ["date", "model", "summary", "strengths", "concerns", "questions"];
 const NOTE = /^[-*]\s+(\d{4}-\d{2}-\d{2})(?:[ T](\d{1,2}:\d{2}))?\s*(.*)$/;
 const BLOCK = /\s\^([A-Za-z0-9-]+)\s*$/;
 const CHECK = /^[-*]\s+\[([ xX])\]\s*(.*)$/;
@@ -342,6 +352,11 @@ function parse(md, allowNewId = false) {
       return d;
     });
   if (docs.length) p.documents = docs;
+  if (fm.ai_review && typeof fm.ai_review === "object") {
+    const a = {};
+    for (const k of AI_REVIEW) if (fm.ai_review[k] != null && String(fm.ai_review[k]).trim()) a[k] = String(fm.ai_review[k]);
+    if (Object.keys(a).length) p.aiReview = a;
+  }
   const recs = (Array.isArray(fm.recordings) ? fm.recordings : [])
     .filter((m) => m && typeof m === "object" && local(m.file))
     .map((m) => {

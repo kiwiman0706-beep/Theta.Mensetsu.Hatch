@@ -218,6 +218,15 @@ const model = require("../../lib/model");
       const r = cropped.rect;
       assert.ok(store.people().find((p) => p.name === "顔 写子").portrait, "portrait saved");
       assert.ok(r.x > 600 && r.x < 860 && r.y >= 0 && r.y < 200 && r.width > 50 && r.width < 300, "frame lands near the top right: " + JSON.stringify(r));
+      // Shifts: a tap on a chip saves it.
+      await page.locator(".shiftchips button", { hasText: "夜勤" }).click();
+      await page.locator(".shiftchips button", { hasText: "土" }).click();
+      for (let i = 0; i < 60 && store.people().find((p) => p.name === "顔 写子").shiftDays !== "土"; i++) await page.waitForTimeout(50);
+      const sh = store.people().find((p) => p.name === "顔 写子");
+      assert.strictEqual(sh.shiftKinds, "夜勤");
+      assert.strictEqual(sh.shiftDays, "土");
+      await page.getByText("AIの見立て").waitFor();
+      await page.screenshot({ path: path.join(shots, "shift.png"), fullPage: true });
       // With a photo, tapping it opens the photo sheet (cut again, cut by hand, remove).
       await page.waitForTimeout(300);
       await page.getByLabel("顔写真").first().click();
@@ -235,7 +244,7 @@ const model = require("../../lib/model");
       await page.locator(".person", { hasText: "佐藤 一郎" }).click();
       await page.getByText("2人を選択").waitFor();
       await page.screenshot({ path: path.join(shots, "pick.png") });
-      assert.ok(await page.getByRole("button", { name: /AIでやり直す/ }).isEnabled());
+      assert.ok(await page.getByRole("button", { name: /AIに頼む・やり直す/ }).isEnabled());
       assert.deepStrictEqual(errors, []);
       await page.close();
     }
